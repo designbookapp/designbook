@@ -56,10 +56,19 @@ and the plugin options.
 
 ## Authentication
 
-The embedded Pi agent uses the Pi SDK's standard auth flow (`~/.pi/agent/auth.json`) and provider
-environment variables — set `ANTHROPIC_API_KEY` in the shell that runs `npm run design` for the
-chat tab. The canvas, code panel, and deep links all work without it. Agent and API errors always
-log to the terminal; `--debug` logs every request and agent event.
+The embedded Pi agent uses the Pi SDK's standard auth flow (`~/.pi/agent/auth.json`, then provider
+environment variables). Two ways to connect a model — the canvas, code panel, and deep links all
+work without one, but the chat tab needs it:
+
+- **OAuth / subscription** — run `npx pi` in your project (the Pi CLI ships with designbook, no
+  separate install), then `/login`. Credentials are saved to `~/.pi/agent/auth.json`; click
+  **Retry connection** in the chat tab to pick them up without restarting.
+- **API key** — set a provider key, e.g. `ANTHROPIC_API_KEY`, in the shell that runs
+  `npm run design`.
+
+If neither is found, the chat tab replaces the prompt input with a setup callout that walks
+through both options. Agent and API errors always log to the terminal; `--debug` logs every
+request and agent event.
 
 ## Host mode (no runnable app)
 

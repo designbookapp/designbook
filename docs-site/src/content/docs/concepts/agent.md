@@ -31,7 +31,10 @@ and the agent makes the real code edits, rather than files being written mechani
 
 ## Authentication & debugging
 
-The agent uses the Pi SDK's standard auth flow (`~/.pi/agent/auth.json`) and provider
-environment variables. Agent and API errors always log to the terminal; run with `--debug`
-(or `DESIGNBOOK_DEBUG=1`) to additionally log every API request and Pi agent event. Turn
-errors also surface in the chat panel.
+The agent uses the Pi SDK's standard auth flow (`~/.pi/agent/auth.json`, then provider
+environment variables such as `ANTHROPIC_API_KEY`). With no credential the chat tab shows a
+setup callout instead of the prompt input: run `npx pi` → `/login` (the Pi CLI ships with
+designbook) or restart with a provider key set, then click **Retry connection** — a new
+session re-reads `auth.json`, so no restart is needed after `/login`. Agent and API errors
+always log to the terminal; run with `--debug` (or `DESIGNBOOK_DEBUG=1`) to additionally log
+every API request and Pi agent event. Turn errors also surface in the chat panel.

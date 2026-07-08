@@ -445,6 +445,10 @@ function createApi(options: ApiOptions) {
   }
 
   async function createSession() {
+    // Re-read ~/.pi/agent/auth.json so credentials written AFTER the server
+    // started (e.g. `npx pi` → /login) are picked up — this is what makes the
+    // chat's no-model "Retry" (POST /api/new-session) work without a restart.
+    authStorage.reload();
     const settingsManager = SettingsManager.create(agentCwd, undefined, {
       projectTrusted: trustProject,
     });

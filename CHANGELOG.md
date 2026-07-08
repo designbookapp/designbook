@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-07-08
+
+### Added
+
+- **No-model setup callout** — with no provider credential the chat tab now
+  replaces the prompt input with setup instructions (`npx pi` → `/login`, or
+  a provider env var like `ANTHROPIC_API_KEY`) and a **Retry connection**
+  button; a new session re-reads `~/.pi/agent/auth.json`, so logging in
+  after launch needs no restart.
+
+### Fixed
+
+- **Canvas selection under `display:contents` wrappers** — components whose
+  first host DOM node is boxless (e.g. a flag-scope wrapper rendering
+  `display: contents`) measured 0×0 and were silently unselectable; rect
+  collection now descends into children when a host has no box.
+
 ## [0.3.0] - 2026-07-08
 
 ### Added

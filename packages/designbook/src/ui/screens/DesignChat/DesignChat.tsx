@@ -5,6 +5,7 @@ import {
   FileImageIcon,
   InfoIcon,
   PlusIcon,
+  RefreshCwIcon,
   SendIcon,
   SquareIcon,
   TriangleAlertIcon,
@@ -30,14 +31,22 @@ import {
   CardHeader,
   CardTitle,
 } from "@designbook-ui/components/ui/card";
-import { Field, FieldGroup, FieldLabel } from "@designbook-ui/components/ui/field";
+import {
+  Field,
+  FieldGroup,
+  FieldLabel,
+} from "@designbook-ui/components/ui/field";
 import {
   InputGroup,
   InputGroupAddon,
   InputGroupButton,
   InputGroupTextarea,
 } from "@designbook-ui/components/ui/input-group";
-import { Marker, MarkerContent, MarkerIcon } from "@designbook-ui/components/ui/marker";
+import {
+  Marker,
+  MarkerContent,
+  MarkerIcon,
+} from "@designbook-ui/components/ui/marker";
 import {
   Select,
   SelectContent,
@@ -64,7 +73,10 @@ import {
   MessageScrollerViewport,
 } from "@designbook-ui/components/ui/message-scroller";
 import { Spinner } from "@designbook-ui/components/ui/spinner";
-import { ToggleGroup, ToggleGroupItem } from "@designbook-ui/components/ui/toggle-group";
+import {
+  ToggleGroup,
+  ToggleGroupItem,
+} from "@designbook-ui/components/ui/toggle-group";
 import { cn } from "@designbook-ui/lib/utils";
 import {
   buildPromptWithCanvasContext,
@@ -106,6 +118,13 @@ const copy = {
   modelPlaceholder: "Select model",
   newConversation: "New conversation",
   newConversationError: "Unable to start a new conversation.",
+  noModelTitle: "Connect an AI model to use chat",
+  noModelBody:
+    "No model provider credential was found — the rest of the workbench works without one, but chat needs it. Either:",
+  noModelLoginHint:
+    "then /login — OAuth or an API key, saved for next time, or",
+  noModelEnvHint: "restart designbook with a provider key set, e.g.",
+  noModelRetry: "Retry connection",
   selectedNodeContextLabel: "Selected node context",
   selectedNodeHelp: "This path will be included with your next message.",
   promptPlaceholder:
@@ -247,20 +266,28 @@ function DesignChat({
   const selectedModelValue = state?.model
     ? getModelValue(state.model)
     : undefined;
+  // No provider credential anywhere: the session came up modelless AND the
+  // available-model list is empty. Chat can't send, so the footer swaps the
+  // prompt input for a setup callout (everything else in the workbench still
+  // works). `models.length` keeps the input when auth exists but the restored
+  // session's model is merely missing — the model select handles that case.
+  const needsModelSetup =
+    state !== undefined && !state.model && models.length === 0;
+
+  async function fetchModels() {
+    try {
+      const response = await fetch(apiUrl("/api/models"));
+      const payload = (await response.json()) as { models?: ModelOption[] };
+      setModels(payload.models ?? []);
+    } catch {
+      setModels([]);
+    }
+  }
 
   useEffect(() => {
     const eventSource = new EventSource(apiUrl("/api/events"));
 
-    void fetch(apiUrl("/api/models"))
-      .then(
-        (response) => response.json() as Promise<{ models?: ModelOption[] }>,
-      )
-      .then((payload) => {
-        setModels(payload.models ?? []);
-      })
-      .catch(() => {
-        setModels([]);
-      });
+    void fetchModels();
 
     eventSource.addEventListener("state", (messageEvent) => {
       const nextState = JSON.parse(messageEvent.data as string) as DesignState;
@@ -485,7 +512,9 @@ function DesignChat({
   }
 
   async function startNewConversation() {
-    const response = await fetch(apiUrl("/api/new-session"), { method: "POST" });
+    const response = await fetch(apiUrl("/api/new-session"), {
+      method: "POST",
+    });
 
     if (!response.ok) {
       setThreadItems((currentItems) =>
@@ -504,6 +533,16 @@ function DesignChat({
     // the empty-conversation marker; just clear local input/streaming refs.
     setPrompt("");
     streamingAssistantIdRef.current = undefined;
+  }
+
+  /**
+   * Recovery path for the no-model callout: a new session re-reads
+   * `~/.pi/agent/auth.json` on the server (see api.ts createSession), so a
+   * `pi /login` done after launch is picked up without restarting.
+   */
+  async function retryModelSetup() {
+    await startNewConversation();
+    await fetchModels();
   }
 
   async function selectModel(value: string) {
@@ -648,80 +687,120 @@ function DesignChat({
               </MarkerContent>
             </Marker>
           ) : null}
-          <form onSubmit={submitPrompt}>
-            <FieldGroup>
-              <Field>
-                <FieldLabel htmlFor={CHAT_PROMPT_INPUT_ID} className="sr-only">
-                  {copy.messageFieldLabel}
-                </FieldLabel>
-                <InputGroup>
-                  <InputGroupTextarea
-                    id={CHAT_PROMPT_INPUT_ID}
-                    value={prompt}
-                    rows={2}
-                    // Cap growth (field-sizing-content) so a long drafted
-                    // prompt — e.g. a Figma pull handoff — scrolls instead of
-                    // swallowing the panel.
-                    className="max-h-48 overflow-y-auto"
-                    placeholder={copy.promptPlaceholder}
-                    onChange={(event) => setPrompt(event.target.value)}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter" && !event.shiftKey) {
-                        event.preventDefault();
-                        event.currentTarget.form?.requestSubmit();
-                      }
-                    }}
-                  />
-                  <InputGroupAddon align="block-end" className="gap-2">
-                    {isBusy ? (
-                      <ToggleGroup
-                        type="single"
-                        value={queueMode}
-                        onValueChange={(value) => {
-                          if (value === "followUp" || value === "steer") {
-                            setQueueMode(value);
-                          }
-                        }}
-                        aria-label={copy.messageDeliveryModeLabel}
-                        spacing={1}
-                      >
-                        <ToggleGroupItem value="followUp" size="sm">
-                          {copy.followUpMode}
-                        </ToggleGroupItem>
-                        <ToggleGroupItem value="steer" size="sm">
-                          {copy.steerMode}
-                        </ToggleGroupItem>
-                      </ToggleGroup>
-                    ) : null}
-                    <InputGroupButton
-                      type="button"
-                      variant="outline"
-                      size="icon-sm"
-                      disabled={!isBusy}
-                      onClick={() => {
-                        void abortTurn();
+          {needsModelSetup ? (
+            <div
+              className="grid gap-2 rounded-md border p-3 text-sm"
+              role="status"
+              data-testid="chat-model-setup"
+            >
+              <span className="font-medium">{copy.noModelTitle}</span>
+              <span className="text-muted-foreground">{copy.noModelBody}</span>
+              <ul className="grid list-disc gap-1 pl-5 text-muted-foreground">
+                <li>
+                  <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
+                    npx pi
+                  </code>{" "}
+                  {copy.noModelLoginHint}
+                </li>
+                <li>
+                  {copy.noModelEnvHint}{" "}
+                  <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
+                    ANTHROPIC_API_KEY=…
+                  </code>
+                </li>
+              </ul>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="justify-self-start"
+                onClick={() => {
+                  void retryModelSetup();
+                }}
+              >
+                <RefreshCwIcon />
+                {copy.noModelRetry}
+              </Button>
+            </div>
+          ) : (
+            <form onSubmit={submitPrompt}>
+              <FieldGroup>
+                <Field>
+                  <FieldLabel
+                    htmlFor={CHAT_PROMPT_INPUT_ID}
+                    className="sr-only"
+                  >
+                    {copy.messageFieldLabel}
+                  </FieldLabel>
+                  <InputGroup>
+                    <InputGroupTextarea
+                      id={CHAT_PROMPT_INPUT_ID}
+                      value={prompt}
+                      rows={2}
+                      // Cap growth (field-sizing-content) so a long drafted
+                      // prompt — e.g. a Figma pull handoff — scrolls instead of
+                      // swallowing the panel.
+                      className="max-h-48 overflow-y-auto"
+                      placeholder={copy.promptPlaceholder}
+                      onChange={(event) => setPrompt(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" && !event.shiftKey) {
+                          event.preventDefault();
+                          event.currentTarget.form?.requestSubmit();
+                        }
                       }}
-                    >
-                      <SquareIcon />
-                      <span className="sr-only">
-                        {copy.abortCurrentResponse}
-                      </span>
-                    </InputGroupButton>
-                    <InputGroupButton
-                      type="submit"
-                      variant="default"
-                      size="icon-sm"
-                      disabled={!prompt.trim()}
-                      className="ml-auto"
-                    >
-                      <SendIcon />
-                      <span className="sr-only">{copy.sendMessage}</span>
-                    </InputGroupButton>
-                  </InputGroupAddon>
-                </InputGroup>
-              </Field>
-            </FieldGroup>
-          </form>
+                    />
+                    <InputGroupAddon align="block-end" className="gap-2">
+                      {isBusy ? (
+                        <ToggleGroup
+                          type="single"
+                          value={queueMode}
+                          onValueChange={(value) => {
+                            if (value === "followUp" || value === "steer") {
+                              setQueueMode(value);
+                            }
+                          }}
+                          aria-label={copy.messageDeliveryModeLabel}
+                          spacing={1}
+                        >
+                          <ToggleGroupItem value="followUp" size="sm">
+                            {copy.followUpMode}
+                          </ToggleGroupItem>
+                          <ToggleGroupItem value="steer" size="sm">
+                            {copy.steerMode}
+                          </ToggleGroupItem>
+                        </ToggleGroup>
+                      ) : null}
+                      <InputGroupButton
+                        type="button"
+                        variant="outline"
+                        size="icon-sm"
+                        disabled={!isBusy}
+                        onClick={() => {
+                          void abortTurn();
+                        }}
+                      >
+                        <SquareIcon />
+                        <span className="sr-only">
+                          {copy.abortCurrentResponse}
+                        </span>
+                      </InputGroupButton>
+                      <InputGroupButton
+                        type="submit"
+                        variant="default"
+                        size="icon-sm"
+                        disabled={!prompt.trim()}
+                        className="ml-auto"
+                      >
+                        <SendIcon />
+                        <span className="sr-only">{copy.sendMessage}</span>
+                      </InputGroupButton>
+                    </InputGroupAddon>
+                  </InputGroup>
+                </Field>
+              </FieldGroup>
+            </form>
+          )}
           <div className="flex flex-wrap items-center gap-2 px-1 text-xs text-muted-foreground">
             <span className="truncate">
               {copy.agentCwdLabel} {state?.cwd ?? copy.starting}

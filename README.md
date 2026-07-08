@@ -59,7 +59,12 @@ pnpm --filter '@designbookapp/designbook' test:run     # vitest
 pnpm --filter '@designbookapp/designbook' check-types  # tsc
 ```
 
-Pi credentials are resolved by the SDK's standard auth flow (`~/.pi/agent/auth.json`) and provider environment variables; set `ANTHROPIC_API_KEY` in the shell that runs `npm run design` for the chat tab (the rest of the workbench works without it).
+Pi credentials are resolved by the SDK's standard auth flow (`~/.pi/agent/auth.json`, then provider environment variables). Two ways to connect a model for the chat tab — the rest of the workbench works without one:
+
+- **OAuth / subscription** — run `npx pi` in your project (the CLI ships with designbook, no separate install), then `/login`. Credentials land in `~/.pi/agent/auth.json`; click **Retry connection** in the chat tab to pick them up without restarting.
+- **API key** — set a provider key, e.g. `ANTHROPIC_API_KEY`, in the shell that runs `npm run design`.
+
+Without either, the chat tab shows a setup callout instead of the prompt input.
 
 ## Status
 

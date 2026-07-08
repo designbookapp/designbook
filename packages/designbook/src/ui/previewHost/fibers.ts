@@ -340,8 +340,15 @@ function getFiberRects(fiber: Fiber): DOMRect[] {
     if (node.tag === HOST_PORTAL_TAG) return;
 
     if (isElementNode(node.stateNode)) {
-      rects.push(node.stateNode.getBoundingClientRect());
-      return;
+      const rect = node.stateNode.getBoundingClientRect();
+      // A boxless host (display:contents wrapper — e.g. a config's FlagScope)
+      // measures 0×0; stopping there would make the whole component measure
+      // empty and every hit on it silently unselectable. Descend into its
+      // children instead.
+      if (rect.width !== 0 || rect.height !== 0) {
+        rects.push(rect);
+        return;
+      }
     }
 
     let child = node.child;
