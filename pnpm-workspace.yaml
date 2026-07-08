@@ -1,0 +1,9 @@
+packages:
+  - packages/*
+  - examples/*
+  # mono-app is a self-contained nested pnpm workspace (monorepo fixture);
+  # install it separately: cd examples/mono-app && pnpm install
+  - "!examples/mono-app"
+  - docs-site
+onlyBuiltDependencies:
+  - esbuild

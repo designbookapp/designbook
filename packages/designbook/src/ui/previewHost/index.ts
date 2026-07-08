@@ -1,0 +1,159 @@
+/**
+ * PreviewHost — the seam over all preview/document access (phase C2.4).
+ *
+ * Everything the workbench chrome needs to reach INTO the previewed document —
+ * fiber hit-testing and drill-in, text-claim markers, the Figma serializer's
+ * computed-style reads — funnels through this module. Today there is a single
+ * **same-document** implementation: the workbench renders the components in its
+ * own React tree, so "reaching into the preview" is direct DOM/fiber access,
+ * and the functions re-exported below ARE that implementation (re-exported from
+ * their `models/` homes — selection, text, catalog — not rewritten).
+ *
+ * The point of the seam is the future protocol line: a Model-A shell renders the
+ * preview in a separate document (iframe / native surface) and implements the
+ * same surface over `postMessage`. UI components must therefore depend ONLY on
+ * this module, never on `fibers`/`figmaSerialize` directly — a unit test
+ * (`previewHostSeam.test.ts`) greps `components/**` and fails if they do.
+ *
+ * The `PreviewHost` interface below documents that surface as an object shape;
+ * `sameDocumentPreviewHost` is the concrete binding. Existing call sites use the
+ * named function re-exports (unchanged signatures); new/refactored code can take
+ * a `PreviewHost` instead so it is transport-agnostic.
+ */
+
+import {
+  getDomInstanceId,
+  getFiberRects,
+  getInstanceId,
+  hitTest,
+  hitTestChain,
+  unionRects,
+} from "./fibers";
+import { serializeComponent } from "./figmaSerialize";
+
+// ---------------------------------------------------------------------------
+// Same-document implementation surface — re-exported verbatim.
+// ---------------------------------------------------------------------------
+
+// Fiber hit-testing / geometry / instance identity.
+export {
+  collectSlotAwareSubtree,
+  collectSubtree,
+  getAnchorElement,
+  getDomInstanceId,
+  getFiberFromDom,
+  getFiberProps,
+  getFiberRects,
+  getInstanceId,
+  hitTest,
+  hitTestChain,
+  isElementNode,
+  unionRects,
+  unwrapType,
+} from "./fibers";
+export type {
+  BoundaryFiberNode,
+  ComponentFiberEntry,
+  DomFiberEntry,
+  Fiber,
+  FiberChainEntry,
+  HitTestResult,
+  SubtreeNode,
+} from "./fibers";
+
+// Figma serialization (computed-style reads over the preview subtree).
+export { serializeComponent } from "./figmaSerialize";
+export type { SerializeOptions, SerializeResult } from "./figmaSerialize";
+
+// Host-app React Context reading (C4.3 host-context adapters).
+export { readFiberContext } from "./fiberContext";
+
+// Same-origin iframe binding of the seam.
+export {
+  elementAtFramePoint,
+  frameLocalRectToScreenRect,
+  safeFrameDocument,
+  safeFrameWindow,
+} from "./framePreviewHost";
+export {
+  frameLocalBoxToScreenBox,
+  frameScale,
+  isFrameDocumentStale,
+  isWithinFrameBounds,
+  screenPointToFrameLocal,
+} from "./frameCoords";
+export type { Box as FrameBox, Point as FramePoint } from "./frameCoords";
+
+// Selection drill-in over the fiber chain.
+export {
+  drillableIndices,
+  resolveClickSelection,
+  resolveDeepClick,
+  resolveDoubleClick,
+  resolveEscape,
+} from "@designbook-ui/models/selection/drillSelection";
+export type {
+  ChainLink,
+  ClickResolution,
+  DeepClickResolution,
+  DoubleClickResolution,
+  EscapeResolution,
+} from "@designbook-ui/models/selection/drillSelection";
+
+// Mapping a selected node back to attributable source targets.
+export {
+  nearestComponentAncestor,
+  resolveCodeTargets,
+  resolveLevelOwner,
+} from "@designbook-ui/models/selection/codeTargets";
+export type { AttributableLink } from "@designbook-ui/models/selection/codeTargets";
+
+// i18n text-claim markers (text tool ↔ serializer).
+export {
+  decodeMarker,
+  getMarkerEntry,
+  stripMarkers,
+} from "@designbook-ui/models/text/i18nMarkers";
+export type { MarkerEntry } from "@designbook-ui/models/text/i18nMarkers";
+
+// ---------------------------------------------------------------------------
+// Interface shape + same-document binding.
+// ---------------------------------------------------------------------------
+
+/**
+ * The transport-agnostic contract for reaching into the previewed document.
+ * The same-document binding is direct fiber/DOM access; a Model-A shell would
+ * implement the same shape over a message channel. Method types are bound to
+ * the same-document functions (`typeof`) so the interface never drifts from the
+ * real surface it abstracts.
+ */
+interface PreviewHost {
+  /** Hit-test the preview at an element, returning the component fiber under it. */
+  hitTest: typeof hitTest;
+  /** The full innermost→outermost fiber/DOM chain under an element. */
+  hitTestChain: typeof hitTestChain;
+  /** Stable instance id for a hit result (drill-in / selection identity). */
+  getInstanceId: typeof getInstanceId;
+  /** Instance id for a descendant DOM node within an owner instance. */
+  getDomInstanceId: typeof getDomInstanceId;
+  /** Bounding rects for a fiber's host nodes. */
+  getFiberRects: typeof getFiberRects;
+  /** Union of a set of rects (selection outline). */
+  unionRects: typeof unionRects;
+  /** Serialize a preview subtree to the Figma render tree (computed-style reads). */
+  serializeComponent: typeof serializeComponent;
+}
+
+/** The current, same-document implementation of {@link PreviewHost}. */
+const sameDocumentPreviewHost: PreviewHost = {
+  hitTest,
+  hitTestChain,
+  getInstanceId,
+  getDomInstanceId,
+  getFiberRects,
+  unionRects,
+  serializeComponent,
+};
+
+export { sameDocumentPreviewHost };
+export type { PreviewHost };

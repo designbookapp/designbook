@@ -1,0 +1,17 @@
+@import "tailwindcss";
+
+/* Custom design tokens declared on :root (Tailwind v4 @theme). Dark variant
+   below flips brand color + bg when documentElement carries data-theme="dark". */
+@theme {
+  --color-brand: oklch(0.55 0.22 285);
+  --color-surface: oklch(0.98 0.01 285);
+  --font-display: Georgia, "Times New Roman", serif;
+  --radius-xl: 1rem;
+}
+
+/* Class/attr-based dark theme: overrides the same custom props on :root when
+   the attribute is present. The collector must pick these up on flip. */
+:root[data-theme="dark"] {
+  --color-brand: oklch(0.78 0.18 90);
+  --color-surface: oklch(0.22 0.02 285);
+}

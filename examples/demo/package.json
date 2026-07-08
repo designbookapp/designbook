@@ -1,0 +1,35 @@
+{
+  "name": "designbook-demo",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "designbook dev designbook.config.tsx --port 8788 --target-cmd \"vite --config vite.designbook.config.ts --port 3011 --strictPort\" --target-port 3011",
+    "start": "designbook designbook.config.tsx",
+    "build": "vite build",
+    "check-types": "tsc --noEmit",
+    "start:lan": "designbook designbook.config.tsx --host 0.0.0.0 --allow-lan --no-open",
+    "dev:plain": "vite"
+  },
+  "dependencies": {
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "i18next": "^25.2.1",
+    "lucide-react": "^0.525.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "react-i18next": "^15.5.3",
+    "react-router-dom": "^7.18.1",
+    "tailwind-merge": "^3.3.1"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.1.11",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "@designbookapp/designbook": "workspace:*",
+    "tailwindcss": "^4.1.11",
+    "typescript": "^5.9.2",
+    "vite": "^7.0.0"
+  }
+}

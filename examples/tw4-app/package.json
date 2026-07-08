@@ -1,0 +1,27 @@
+{
+  "name": "tw4-app",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "dev:designbook": "vite --config vite.designbook.config.ts --port 3016",
+    "design": "designbook dev --port 8795 --target-cmd \"npm run dev:designbook\" --target-port 3016"
+  },
+  "dependencies": {
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.1.11",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.3",
+    "@designbookapp/designbook": "workspace:*",
+    "tailwindcss": "^4.1.11",
+    "typescript": "~5.6.2",
+    "vite": "^8.1.1"
+  }
+}

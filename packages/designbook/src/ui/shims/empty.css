@@ -1,0 +1,7 @@
+/*
+ * Empty stylesheet. The library build (vite.lib.config.ts) aliases
+ * `@fontsource-variable/geist` to this file so the bundled workbench css does
+ * not embed font binaries or emit separate font assets. In library mode the
+ * chrome falls back to the system sans-serif stack (see `--font-family` in
+ * index.css). Host/dev mode still loads the real Geist webfont.
+ */

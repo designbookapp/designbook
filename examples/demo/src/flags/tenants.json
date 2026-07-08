@@ -1,0 +1,10 @@
+{
+  "acme": {
+    "newCheckout": true,
+    "density": "compact"
+  },
+  "globex": {
+    "newCheckout": false,
+    "density": "comfortable"
+  }
+}

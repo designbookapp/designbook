@@ -1,0 +1,50 @@
+{
+  "product": {
+    "perPerson": "per person",
+    "reviews_one": "({{count}} review)",
+    "reviews_other": "({{count}} reviews)",
+    "nights_one": "{{count}} day",
+    "nights_other": "{{count}} days",
+    "badge": {
+      "deal": "Deal",
+      "popular": "Update",
+      "new": "New"
+    },
+    "viewTrip": "testing",
+    "bookNow": "Book now",
+    "operatedBy": "Operated by {{brand}}. Free cancellation up to 30 days before departure."
+  },
+  "results": {
+    "title": "Trips for you",
+    "count_one": "{{count}} trip",
+    "count_other": "{{count}} trips"
+  },
+  "nav": {
+    "home": "Home",
+    "trips": "Trips",
+    "about": "About",
+    "compact": "Compact",
+    "comfortable": "Comfortable"
+  },
+  "home": {
+    "heroTitle": "Adventures measured in stories, not miles",
+    "heroTagline": "Small-group trips led by local guides — coastlines, vineyards, and mountain trails at a human pace.",
+    "browseTrips": "Browse trips",
+    "featuredTitle": "Featured trips"
+  },
+  "detail": {
+    "backToTrips": "Back to trips",
+    "notFound": "That trip has sailed — we couldn't find it."
+  },
+  "about": {
+    "title": "About {{brand}}",
+    "intro": "We started with one rented van and a conviction that the best trips are the ones you could never plan from a desk.",
+    "missionTitle": "Our mission",
+    "missionBody": "Keep groups small, keep guides local, and leave every trail better than we found it.",
+    "promiseTitle": "Our promise",
+    "promiseBody": "Real itineraries, honest prices, and a human on the phone when plans change.",
+    "badgeGuides": "Local guides",
+    "badgeGroups": "Small groups",
+    "badgeCancellation": "Free cancellation"
+  }
+}

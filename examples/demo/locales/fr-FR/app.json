@@ -1,0 +1,50 @@
+{
+  "product": {
+    "perPerson": "par personne",
+    "reviews_one": "({{count}} avis)",
+    "reviews_other": "({{count}} avis)",
+    "nights_one": "{{count}} nuit",
+    "nights_other": "{{count}} nuits",
+    "badge": {
+      "deal": "Promo",
+      "popular": "Populaire",
+      "new": "Nouveau"
+    },
+    "viewTrip": "Voir le voyage",
+    "bookNow": "Réserver",
+    "operatedBy": "Proposé par {{brand}}. Annulation gratuite jusqu'à 30 jours avant le départ."
+  },
+  "results": {
+    "title": "Voyages pour vous",
+    "count_one": "{{count}} voyage",
+    "count_other": "{{count}} voyages"
+  },
+  "nav": {
+    "home": "Accueil",
+    "trips": "Voyages",
+    "about": "À propos",
+    "compact": "Compact",
+    "comfortable": "Confortable"
+  },
+  "home": {
+    "heroTitle": "Des aventures qui se mesurent en histoires, pas en kilomètres",
+    "heroTagline": "Des voyages en petits groupes menés par des guides locaux — côtes, vignobles et sentiers de montagne à un rythme humain.",
+    "browseTrips": "Voir les voyages",
+    "featuredTitle": "Voyages à la une"
+  },
+  "detail": {
+    "backToTrips": "Retour aux voyages",
+    "notFound": "Ce voyage a déjà levé l'ancre — introuvable."
+  },
+  "about": {
+    "title": "À propos de {{brand}}",
+    "intro": "Tout a commencé avec un van de location et la conviction que les plus beaux voyages ne se planifient pas depuis un bureau.",
+    "missionTitle": "Notre mission",
+    "missionBody": "Des groupes restreints, des guides locaux, et des sentiers laissés plus beaux qu'on ne les a trouvés.",
+    "promiseTitle": "Notre promesse",
+    "promiseBody": "Des itinéraires authentiques, des prix honnêtes et un humain au téléphone quand les plans changent.",
+    "badgeGuides": "Guides locaux",
+    "badgeGroups": "Petits groupes",
+    "badgeCancellation": "Annulation gratuite"
+  }
+}

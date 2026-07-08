@@ -1,0 +1,12 @@
+{
+  "greeting": {
+    "title": "Welcome back",
+    "subtitle": "Your dashboard is ready to explore.",
+    "trips_one": "{{count}} trip planned",
+    "trips_other": "{{count}} trips planned"
+  },
+  "farewell": {
+    "title": "See you soon",
+    "note": "Thanks for stopping by today."
+  }
+}

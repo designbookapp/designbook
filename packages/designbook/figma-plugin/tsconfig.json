@@ -1,0 +1,28 @@
+{
+  "compilerOptions": {
+    "target": "ES2017",
+    "lib": ["ES2017", "DOM"],
+    "module": "ES2020",
+    "moduleResolution": "bundler",
+    "types": ["@figma/plugin-typings"],
+    "strict": true,
+    "skipLibCheck": true,
+    "allowImportingTsExtensions": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "noEmit": true
+  },
+  "include": [
+    "code.ts",
+    "ui.ts",
+    "render.ts",
+    "readHtml.ts",
+    "../src/config/figmaRender.ts",
+    "../src/config/figmaReadCss.ts",
+    "../src/config/figmaHtml.ts",
+    "../src/config/figmaSlots.ts",
+    "../src/config/figmaComponentProps.ts",
+    "../src/config/color.ts"
+  ]
+}

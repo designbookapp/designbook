@@ -1,0 +1,19 @@
+node_modules/
+dist/
+.astro/
+.turbo/
+.DS_Store
+*.local
+.env
+.env.local
+
+# Local reference copies of external repos (not part of this repo)
+/design/
+/cruises/
+/components/
+
+# Shallow clones of external repos used for compatibility testing
+tmp-repos/
+
+# Claude Code local state (agent worktrees, local settings)
+.claude/

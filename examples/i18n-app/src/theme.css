@@ -1,0 +1,13 @@
+:root {
+  --brand-primary: #3b5bdb;
+  --brand-surface: #f1f3f5;
+  --brand-text: #1a1b1e;
+  --brand-radius: 8px;
+}
+
+.dark {
+  --brand-primary: #91a7ff;
+  --brand-surface: #1a1b1e;
+  --brand-text: #f1f3f5;
+  --brand-radius: 8px;
+}

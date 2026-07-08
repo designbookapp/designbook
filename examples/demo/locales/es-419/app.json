@@ -1,0 +1,50 @@
+{
+  "product": {
+    "perPerson": "por persona",
+    "reviews_one": "({{count}} reseña)",
+    "reviews_other": "({{count}} reseñas)",
+    "nights_one": "{{count}} noche",
+    "nights_other": "{{count}} noches",
+    "badge": {
+      "deal": "Oferta",
+      "popular": "Popular",
+      "new": "Nuevo"
+    },
+    "viewTrip": "Ver viaje",
+    "bookNow": "Reservar",
+    "operatedBy": "Operado por {{brand}}. Cancelación gratuita hasta 30 días antes de la salida."
+  },
+  "results": {
+    "title": "Viajes para ti",
+    "count_one": "{{count}} viaje",
+    "count_other": "{{count}} viajes"
+  },
+  "nav": {
+    "home": "Inicio",
+    "trips": "Viajes",
+    "about": "Nosotros",
+    "compact": "Compacto",
+    "comfortable": "Cómodo"
+  },
+  "home": {
+    "heroTitle": "Aventuras que se miden en historias, no en kilómetros",
+    "heroTagline": "Viajes en grupos pequeños con guías locales: costas, viñedos y senderos de montaña a ritmo humano.",
+    "browseTrips": "Ver viajes",
+    "featuredTitle": "Viajes destacados"
+  },
+  "detail": {
+    "backToTrips": "Volver a viajes",
+    "notFound": "Ese viaje ya zarpó: no lo encontramos."
+  },
+  "about": {
+    "title": "Sobre {{brand}}",
+    "intro": "Empezamos con una van alquilada y la convicción de que los mejores viajes no se planean desde un escritorio.",
+    "missionTitle": "Nuestra misión",
+    "missionBody": "Grupos pequeños, guías locales y dejar cada sendero mejor de como lo encontramos.",
+    "promiseTitle": "Nuestra promesa",
+    "promiseBody": "Itinerarios reales, precios honestos y una persona al teléfono cuando los planes cambian.",
+    "badgeGuides": "Guías locales",
+    "badgeGroups": "Grupos pequeños",
+    "badgeCancellation": "Cancelación gratuita"
+  }
+}

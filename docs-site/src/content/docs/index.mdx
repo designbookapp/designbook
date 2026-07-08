@@ -1,0 +1,57 @@
+---
+title: Designbook
+description: A design workbench for React repos — a live component canvas plus an embedded coding agent that turns design edits into real code.
+template: splash
+hero:
+  tagline: Design your product, not pictures of it.
+  actions:
+    - text: Get started
+      link: /getting-started/what-is-designbook/
+      icon: right-arrow
+    - text: Configuration reference
+      link: /config/define-config/
+      icon: open-book
+      variant: minimal
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+Designbook is a Storybook-like workbench that runs against **your real React code**.
+It **injects into your app's own Vite dev server**: a `◈ designbook` toolbar pill opens
+tools right on your running app, or expands into a full-screen canvas, and your components
+render through your app's own bundler, styling, and providers. Designers edit theme tokens,
+copy, and feature flags directly — with an embedded coding agent that applies those
+edits as real changes to your source files.
+
+<CardGrid>
+  <Card title="Real components, real code" icon="seti:react">
+    Your components hot-reload exactly as they do in your app. Edits the agent makes land
+    as commits-ready file changes, not throwaway mockups.
+  </Card>
+  <Card title="Edit right on the page" icon="pencil">
+    Select a component, prompt Pi, or edit text in place directly on your running app — the
+    full canvas is one step further, not the only way in.
+  </Card>
+  <Card title="Designer-facing editing" icon="setting">
+    Adapters expose theme tokens, translated text, and per-tenant flags as editable
+    fields on the canvas, writing back to your CSS, locale JSON, and flag files.
+  </Card>
+  <Card title="Your real build pipeline" icon="approve-check">
+    In injected mode your components compile through your app's own Vite — its aliases,
+    tsconfig paths, and providers apply, so previews match production. (Host mode uses an
+    embedded Vite with the same bridges auto-detected from your repo.)
+  </Card>
+  <Card title="Figma round-trip" icon="figma">
+    Push components to Figma as native layers with bound variables, then pull designer
+    edits back as a target the agent applies to your source.
+  </Card>
+</CardGrid>
+
+## Where to next
+
+- **[What is Designbook?](/getting-started/what-is-designbook/)** — the two-minute tour.
+- **[Install & run](/getting-started/install-and-run/)** — `npm i -D @designbookapp/designbook`, `init`, `design`.
+- **[Injected mode](/getting-started/injected-mode/)** — how the plugin injects into your Vite dev server.
+- **[Your first config](/getting-started/first-config/)** — a minimal config you can grow.
+- **[Using with your repo](/repo/compat/)** — how Designbook adapts to your build setup.
+- **[Security & trust model](/reference/security/)** — the trust model and the flags that harden it.

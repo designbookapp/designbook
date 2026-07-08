@@ -1,0 +1,50 @@
+/* Designbook docs — light accent styling over Starlight defaults.
+   Clean and professional; tuned for both dark and light themes. */
+
+:root {
+  /* Accent: a calm indigo/violet, evoking "design tooling". */
+  --sl-color-accent-low: #201a3a;
+  --sl-color-accent: #6a5cff;
+  --sl-color-accent-high: #cfc9ff;
+
+  --sl-color-text-accent: var(--sl-color-accent-high);
+
+  /* Slightly tighter content measure for readable prose. */
+  --sl-content-width: 50rem;
+}
+
+/* Light theme accent ramp. */
+:root[data-theme="light"] {
+  --sl-color-accent-low: #e2ddff;
+  --sl-color-accent: #5646e6;
+  --sl-color-accent-high: #241a5c;
+  --sl-color-text-accent: var(--sl-color-accent);
+}
+
+/* Hero tagline emphasis on the landing splash. */
+.hero .tagline {
+  font-size: var(--sl-text-h4);
+  color: var(--sl-color-gray-2);
+}
+
+/* Give the site title a touch more weight. */
+.site-title {
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+/* Inline code + code blocks: subtle accent border for scannability. */
+.sl-markdown-content :not(pre) > code {
+  border: 1px solid var(--sl-color-gray-5);
+}
+
+/* Card grid on the home page reads as a product surface, not marketing. */
+.sl-markdown-content .card {
+  border-radius: 0.6rem;
+}
+
+/* Tables in the config reference: let wide type columns breathe + scroll. */
+.sl-markdown-content table {
+  display: block;
+  overflow-x: auto;
+}
