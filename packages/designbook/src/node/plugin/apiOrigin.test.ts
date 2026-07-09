@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { isNonLoopbackBindHost, isSameOriginApiRequest } from "./apiOrigin.ts";
+import {
+  CROSS_ORIGIN_EXEMPT_API_PATHS,
+  isCrossOriginExemptApiPath,
+  isNonLoopbackBindHost,
+  isSameOriginApiRequest,
+} from "./apiOrigin.ts";
 
 describe("isSameOriginApiRequest — host mode (loopback bind)", () => {
   const boundHost = "localhost";
@@ -183,6 +188,29 @@ describe("isSameOriginApiRequest — explicit non-loopback bind", () => {
         boundPort: 8787,
       }),
     ).toBe(false);
+  });
+});
+
+describe("isCrossOriginExemptApiPath", () => {
+  it("exempts exactly the discovery route and its legacy figma alias (E1)", () => {
+    expect([...CROSS_ORIGIN_EXEMPT_API_PATHS].sort()).toEqual([
+      "/api/figma-hello",
+      "/api/hello",
+    ]);
+    expect(isCrossOriginExemptApiPath("/api/hello")).toBe(true);
+    expect(isCrossOriginExemptApiPath("/api/figma-hello")).toBe(true);
+  });
+
+  it("exempts nothing else — integrations cannot add exemptions", () => {
+    for (const path of [
+      "/api/x/figma/status",
+      "/api/figma/status",
+      "/api/bridge/figma",
+      "/api/prompt",
+      "/api/hello/extra",
+    ]) {
+      expect(isCrossOriginExemptApiPath(path), path).toBe(false);
+    }
   });
 });
 

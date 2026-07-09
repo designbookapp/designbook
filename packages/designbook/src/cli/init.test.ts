@@ -12,6 +12,7 @@ import {
   chooseComponentsDir,
   detectIndent,
   detectPackageManagerFrom,
+  gitignoreListsPattern,
   globForDir,
   mergeScripts,
   pmAddDev,
@@ -236,6 +237,63 @@ describe("runInit → .designbook/ template", () => {
     };
     expect(pkg.scripts.design).toContain("designbook dev");
     expect(pkg.scripts["dev:designbook"]).toContain("vite.designbook.config.ts");
+  });
+
+  it("scaffolds .designbook/worktrees/ into .gitignore, idempotently", async () => {
+    writeFileSync(
+      join(dir, "package.json"),
+      JSON.stringify({ name: "web", scripts: { dev: "vite" } }, null, 2),
+    );
+    writeFileSync(join(dir, "vite.config.ts"), "export default {};\n");
+    writeFileSync(join(dir, ".gitignore"), "node_modules\ndist\n");
+    mkdirSync(join(dir, "src/components"), { recursive: true });
+    writeFileSync(join(dir, "src/components/Button.tsx"), "export const B = 1;\n");
+
+    await runInit([]);
+    let ignore = readFileSync(join(dir, ".gitignore"), "utf8");
+    expect(ignore).toContain(".designbook/worktrees/");
+    expect(ignore).toContain("node_modules"); // preserved
+    const firstCount = ignore.split(".designbook/worktrees/").length - 1;
+    expect(firstCount).toBe(1);
+
+    // Re-run: the entry is not duplicated.
+    await runInit([]);
+    ignore = readFileSync(join(dir, ".gitignore"), "utf8");
+    expect(ignore.split(".designbook/worktrees/").length - 1).toBe(1);
+  });
+
+  it("creates .gitignore when the app has none", async () => {
+    writeFileSync(
+      join(dir, "package.json"),
+      JSON.stringify({ name: "web", scripts: { dev: "vite" } }, null, 2),
+    );
+    writeFileSync(join(dir, "vite.config.ts"), "export default {};\n");
+    mkdirSync(join(dir, "src/components"), { recursive: true });
+    writeFileSync(join(dir, "src/components/Button.tsx"), "export const B = 1;\n");
+
+    await runInit([]);
+    expect(readFileSync(join(dir, ".gitignore"), "utf8")).toContain(
+      ".designbook/worktrees/",
+    );
+  });
+});
+
+describe("gitignoreListsPattern", () => {
+  it("matches an exact line, ignoring trailing slash and surrounding blanks", () => {
+    expect(
+      gitignoreListsPattern("a\n.designbook/worktrees\nb\n", ".designbook/worktrees/"),
+    ).toBe(true);
+    expect(
+      gitignoreListsPattern(".designbook/worktrees/\n", ".designbook/worktrees/"),
+    ).toBe(true);
+  });
+  it("does not match comments or unrelated substrings", () => {
+    expect(
+      gitignoreListsPattern("# .designbook/worktrees/\n", ".designbook/worktrees/"),
+    ).toBe(false);
+    expect(
+      gitignoreListsPattern(".designbook/worktrees/x\n", ".designbook/worktrees/"),
+    ).toBe(false);
   });
 });
 

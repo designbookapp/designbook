@@ -16,23 +16,16 @@
 import type {
   Adapter,
   AdapterSetup,
-  AdapterTabAction,
   ContextDimension,
   ContextState,
-  FigmaCollection,
-  NameMap,
 } from "@designbookapp/designbook/config";
 import {
-  buildNameMap,
-  collectionToTokens,
-  derivedDimensionsToVariables,
   parseCssTokens,
   parseJsonTokens,
   parseRadiusScale,
   parseVariantOverrides,
   resolveTokenValue,
   resolveVariantModel,
-  tokensToCollection,
 } from "@designbookapp/designbook/config";
 import type {
   DerivedDimension,
@@ -43,7 +36,8 @@ import type {
 } from "@designbookapp/designbook/config";
 import { apiUrl, repoPathFromGlobKey } from "@designbook-ui/designbook";
 import { notifyFileWritten } from "@designbook-ui/fileWriteBus";
-import { getAdapterRuntime, setFigmaTokenSource } from "@designbook-ui/adapterRuntime";
+import { getAdapterRuntime } from "@designbook-ui/adapterRuntime";
+import { registerTokenSource } from "@designbook-ui/integrations/tokenSources";
 import { CANVAS_THEME_CLASS } from "@designbook-ui/models/configState/themeConstants";
 
 type ThemeAdapterOptions = {
@@ -95,10 +89,11 @@ type ThemeAdapterOptions = {
   /** Optional per-token control-type overrides, keyed by token name. */
   tokens?: Record<string, { type?: TokenType }>;
   /**
-   * Figma variable sync. Adds "Sync to Figma" / "Sync from Figma" actions to
-   * the Theme tab (enabled only while the plugin is connected). Token↔variable
-   * naming is `nameRule` (default identity), overlaid by an optional
-   * `nameMapFile` (repo-relative JSON `{ tokenName: figmaName }`).
+   * @deprecated Move these to the figma integration's options in the
+   * designbook config: `integrations: { figma: { tokens: { collection,
+   * nameRule, nameMapFile } } }`. Still honored (forwarded through the
+   * neutral token source's `meta.figma`) with a one-time console warning;
+   * the Sync to/from Figma buttons now live on the Figma tab.
    */
   figma?: {
     /** Target collection name. Default "designbook/theme". */
@@ -230,205 +225,49 @@ function themeAdapter(options: ThemeAdapterOptions): Adapter {
   // is base only.
   let activeVariant = "default";
 
-  const figmaCollection = options.figma?.collection ?? "designbook/theme";
-  // Built during setup() (may fetch a name-map file); identity default.
-  let nameMap: NameMap = buildNameMap({ rule: options.figma?.nameRule });
-
-  async function loadNameMap(): Promise<void> {
-    let overrides: Record<string, string> | undefined;
-    if (options.figma?.nameMapFile) {
-      try {
-        const response = await fetch(
-          apiUrl(
-            `/api/file?path=${encodeURIComponent(
-              repoPathFromGlobKey(options.figma.nameMapFile),
-            )}`,
-          ),
-        );
-        if (response.ok) {
-          const payload = (await response.json()) as { content?: string };
-          const parsed = JSON.parse(payload.content ?? "{}") as unknown;
-          if (parsed && typeof parsed === "object") {
-            overrides = parsed as Record<string, string>;
-          }
-        }
-      } catch {
-        // Missing/invalid map file falls back to the rule-only name map.
-      }
-    }
-    nameMap = buildNameMap({ rule: options.figma?.nameRule, overrides });
-  }
-
   /**
-   * Publishes the token list (CSS var ↔ Figma variable name) for the Figma
-   * component-push serializer's token attribution. Values are probed live per
-   * push, so re-registering on variant/mode change just keeps names current.
+   * Publishes the NEUTRAL token source (G2a inversion): resolved tokens for
+   * the ACTIVE variant, the derived radius scale (as `cssValue` expressions),
+   * and a write-back hook. The figma integration consumes this from its own
+   * tab (naming/collection are ITS options); this adapter knows nothing about
+   * Figma beyond the deprecated `figma` option forwarded through `meta`.
    */
-  function registerFigmaTokenSource(): void {
-    setFigmaTokenSource({
-      collection: figmaCollection,
-      tokens: [
-        ...model.tokens.map((token) => ({
-          cssVar: token.name,
-          figmaName: nameMap.toFigma(token.name),
-          type: token.type,
-        })),
-        // Derived radius scale AFTER the model tokens (first-token-wins on
-        // px collisions, so a real token like `radius` keeps priority). The
-        // expression rides along for probing (`@theme` vars may not exist in
-        // the document).
-        ...radiusScale
-          .filter((dim) => !model.tokens.some((token) => token.name === dim.name))
-          .map((dim) => ({
-            cssVar: dim.name,
-            figmaName: nameMap.toFigma(dim.name),
-            type: "dimension" as const,
-            cssValue: dim.expr,
+  function publishTokenSource(): void {
+    registerTokenSource({
+      id: name,
+      collectionHint: `designbook/${name}`,
+      modes,
+      getTokens: () => {
+        const active = resolveVariantModel(model, overrides, activeVariant);
+        return [
+          ...active.tokens.map((token) => ({
+            name: token.name,
+            type: token.type,
+            valuesByMode: { ...token.valuesByMode },
+            cssVar: token.name,
           })),
-      ],
+          // Derived radius scale AFTER the model tokens (first-token-wins on
+          // px collisions, so a real token like `radius` keeps priority). The
+          // expression rides along for probing (`@theme` vars may not exist
+          // in the document).
+          ...radiusScale
+            .filter(
+              (dim) => !model.tokens.some((token) => token.name === dim.name),
+            )
+            .map((dim) => ({
+              name: dim.name,
+              type: "dimension" as const,
+              valuesByMode: {},
+              cssVar: dim.name,
+              cssValue: dim.expr,
+            })),
+        ];
+      },
+      setToken: (mode, tokenName, value) =>
+        saveToken(activeVariant, mode, tokenName, value),
+      ...(options.figma ? { meta: { figma: options.figma } } : {}),
     });
   }
-
-  async function figmaConnected(): Promise<boolean> {
-    try {
-      const response = await fetch(apiUrl("/api/figma/status"));
-      if (!response.ok) return false;
-      const payload = (await response.json()) as { connected?: boolean };
-      return Boolean(payload.connected);
-    } catch {
-      return false;
-    }
-  }
-
-  async function syncToFigma(): Promise<string> {
-    // Push the ACTIVE variant's resolved model (what the Theme tab shows).
-    const active = resolveVariantModel(model, overrides, activeVariant);
-    const collection = tokensToCollection(active, {
-      collection: figmaCollection,
-      nameMap,
-    });
-    // Publish the derived radius scale (px FLOATs, evaluated against the
-    // active variant's token values) alongside the real tokens.
-    for (const variable of derivedDimensionsToVariables(
-      radiusScale,
-      active,
-      nameMap,
-    )) {
-      if (!collection.variables.some((v) => v.name === variable.name)) {
-        collection.variables.push(variable);
-      }
-    }
-    const response = await fetch(apiUrl("/api/figma/variables"), {
-      method: "PUT",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(collection),
-    });
-    if (response.status === 409) {
-      throw new Error("No Figma plugin connected.");
-    }
-    if (!response.ok) {
-      const payload = (await response.json().catch(() => ({}))) as {
-        error?: string;
-      };
-      throw new Error(payload.error ?? "Failed to push variables to Figma.");
-    }
-    const result = (await response.json()) as {
-      created?: number;
-      updated?: number;
-      skippedModes?: string[];
-    };
-    const skipped = result.skippedModes ?? [];
-    const note =
-      skipped.length > 0
-        ? ` This Figma plan limits collections to one mode, so ${skipped.join(", ")} ${skipped.length === 1 ? "was" : "were"} not synced.`
-        : "";
-    return `Pushed "${figmaCollection}": ${result.created ?? 0} created, ${result.updated ?? 0} updated.${note}`;
-  }
-
-  async function syncFromFigma(): Promise<string> {
-    const response = await fetch(apiUrl("/api/figma/variables"), { method: "POST" });
-    if (response.status === 409) {
-      throw new Error("No Figma plugin connected.");
-    }
-    if (!response.ok) {
-      throw new Error("Failed to read variables from Figma.");
-    }
-    const payload = (await response.json()) as {
-      collections?: Array<{
-        name: string;
-        modes: string[];
-        variables: Array<{
-          name: string;
-          resolvedType: FigmaCollection["variables"][number]["type"];
-          valuesByMode: Record<string, unknown>;
-        }>;
-      }>;
-    };
-    const collections = payload.collections ?? [];
-    const raw =
-      collections.find((collection) => collection.name === figmaCollection) ??
-      collections[0];
-    if (!raw) throw new Error("Figma returned no variable collections.");
-
-    const collection: FigmaCollection = {
-      name: raw.name,
-      modes: raw.modes,
-      variables: raw.variables.map((variable) => ({
-        name: variable.name,
-        type: variable.resolvedType,
-        valuesByMode:
-          variable.valuesByMode as FigmaCollection["variables"][number]["valuesByMode"],
-      })),
-    };
-
-    // Merge onto the active variant's resolved model, and write each changed
-    // value back through saveToken (routing to base or the active variant).
-    const active = resolveVariantModel(model, overrides, activeVariant);
-    const next = collectionToTokens(collection, active, nameMap);
-    let changed = 0;
-    for (const token of next.tokens) {
-      for (const mode of model.modes) {
-        const nextValue = token.valuesByMode[mode];
-        const current = resolveTokenValue(
-          model,
-          overrides,
-          activeVariant,
-          mode,
-          token.name,
-        );
-        if (nextValue !== undefined && nextValue !== current) {
-          await saveToken(activeVariant, mode, token.name, nextValue);
-          changed++;
-        }
-      }
-    }
-
-    const tokenFigmaNames = new Set(
-      model.tokens.map((token) => nameMap.toFigma(token.name)),
-    );
-    const skipped = collection.variables.filter(
-      (variable) => !tokenFigmaNames.has(variable.name),
-    ).length;
-
-    return `Pulled "${raw.name}": ${changed} value(s) updated${skipped ? `, ${skipped} unmatched var(s) skipped` : ""}.`;
-  }
-
-  const figmaActions: AdapterTabAction[] = [
-    {
-      id: "sync-to-figma",
-      label: "Sync to Figma",
-      description: `Push theme tokens to the "${figmaCollection}" variable collection.`,
-      isEnabled: figmaConnected,
-      run: syncToFigma,
-    },
-    {
-      id: "sync-from-figma",
-      label: "Sync from Figma",
-      description: "Pull matching variable values back into the theme source.",
-      isEnabled: figmaConnected,
-      run: syncFromFigma,
-    },
-  ];
 
   function currentMode(ctx: ContextState): string {
     return ctx[modeKey] ?? modes[0] ?? "";
@@ -633,12 +472,17 @@ function themeAdapter(options: ThemeAdapterOptions): Adapter {
         model = parseJsonTokens(options.source, modes);
       }
       applyTypeOverrides(model, options.tokens);
-      await loadNameMap();
+
+      if (options.figma) {
+        console.warn(
+          `[designbook] themeAdapter "${name}": the \`figma\` option is deprecated — move it to \`integrations: { figma: { tokens: { … } } }\` in your designbook config. Forwarding for now; the Sync to/from Figma buttons live on the Figma tab.`,
+        );
+      }
 
       overrides = await loadOverrides();
       // Start the canvas consistent with the default variant (base values).
       reinject(activeVariant);
-      registerFigmaTokenSource();
+      publishTokenSource();
 
       const modeDimension: ContextDimension = {
         id: "mode",
@@ -682,9 +526,8 @@ function themeAdapter(options: ThemeAdapterOptions): Adapter {
             // covered too.
             reinject(activeVariant);
           }
-          // Token names don't change with context, but re-register so the
-          // Figma serializer always sees a current source.
-          registerFigmaTokenSource();
+          // The published token source reads live state through getTokens(),
+          // so no re-registration is needed on context change.
         },
         tabs: [
           {
@@ -710,7 +553,6 @@ function themeAdapter(options: ThemeAdapterOptions): Adapter {
                   saveToken(variant, mode, token.name, String(next)),
               }));
             },
-            actions: figmaActions,
           },
         ],
       };

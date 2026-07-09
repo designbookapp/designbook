@@ -134,6 +134,25 @@ type UseCanvasRouteOptions = {
   onRouteChange?: (route: CanvasRoute) => void;
 };
 
+/**
+ * Memory (injected) mode reconcile: the route restored from the reload-persist
+ * blob may still carry the branch the workbench was on BEFORE a proxy branch
+ * switch reloaded the page (the blob flushes on pagehide, pre-switch). The
+ * server's active branch is the truth there — returns the corrected route when
+ * the persisted branch is stale, undefined when nothing needs to change. Hash
+ * mode never reconciles: its URL branch is an explicit deep link that instead
+ * drives an auto-switch (shouldAutoSwitchBranch in useWorktrees).
+ */
+function reconcileRouteBranch(
+  route: CanvasRoute,
+  currentBranch: string | undefined,
+  memory: boolean,
+): CanvasRoute | undefined {
+  if (!memory || !currentBranch) return undefined;
+  if (!route.branch || route.branch === currentBranch) return undefined;
+  return { ...route, branch: currentBranch };
+}
+
 function useCanvasRoute(
   currentBranch: string | undefined,
   options: UseCanvasRouteOptions = {},
@@ -144,6 +163,18 @@ function useCanvasRoute(
   const [route, setRoute] = useState<CanvasRoute>(() =>
     memory ? (initialRoute ?? EMPTY_ROUTE) : parseHash(),
   );
+
+  // Memory mode: snap a stale persisted branch to the live one — and persist
+  // the correction — so a post-switch reload can't resurrect (or re-switch to)
+  // the pre-switch branch.
+  useEffect(() => {
+    const next = reconcileRouteBranch(route, currentBranch, memory);
+    if (next) {
+      setRoute(next);
+      onRouteChange?.(next);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reconcile when the branches involved change
+  }, [route, currentBranch, memory]);
 
   useEffect(() => {
     if (memory) return; // memory mode never listens to the URL
@@ -208,5 +239,5 @@ const EMPTY_ROUTE: CanvasRoute = {
   nodeIds: [],
 };
 
-export { buildHash, parseHashString, useCanvasRoute };
+export { buildHash, parseHashString, reconcileRouteBranch, useCanvasRoute };
 export type { CanvasRoute, UseCanvasRouteOptions };

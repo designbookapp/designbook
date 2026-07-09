@@ -39,6 +39,7 @@ import {
   type ToolState,
 } from "./pageHit";
 import { resolvePageHit } from "./resolvePageHit";
+import { installToolIntercept } from "@designbook-ui/screens/toolIntercept";
 import { PageTextTool, type PageTextToolHandle } from "./PageTextTool";
 import {
   installPageMark,
@@ -250,7 +251,10 @@ function PageTools({
     });
   }
 
-  function handleClick(event: React.MouseEvent) {
+  // Driven by the capture-phase interceptor while armed (never by React —
+  // the intercepted events are swallowed before they reach any handler the
+  // app OR our React root could see). Native event: coordinates intact.
+  function handleClick(event: MouseEvent) {
     const el = elementUnderPointer(event.clientX, event.clientY);
     setSelectedHit(el ? resolvePageHit(el) : undefined);
   }
@@ -290,6 +294,24 @@ function PageTools({
   }, [tool, selectedHit]);
 
   const armed = tool === "select";
+
+  // Full capture-phase interception while the select tool is armed: swallow
+  // the whole pointer sequence at the (app's own) window before ANY app
+  // handler — document-capture ones included — or default action can run,
+  // and drive selection from the interceptor (see toolIntercept.ts). The
+  // strip/chip/drawer are siblings of the capture layer, so their own events
+  // pass through untouched.
+  const captureLayerRef = useRef<HTMLDivElement>(null);
+  const handleClickRef = useRef(handleClick);
+  handleClickRef.current = handleClick;
+  useEffect(() => {
+    const layer = captureLayerRef.current;
+    if (!armed || !layer) return;
+    return installToolIntercept(layer, {
+      click: (event) => handleClickRef.current(event),
+    });
+  }, [armed]);
+
   const showHover =
     armed &&
     hoverHit &&
@@ -303,6 +325,7 @@ function PageTools({
     <>
       {/* Capture / overlay layer: opts into pointer events only while armed. */}
       <div
+        ref={captureLayerRef}
         className="fixed inset-0"
         style={{
           pointerEvents: armed ? "auto" : "none",
@@ -310,7 +333,6 @@ function PageTools({
         }}
         onPointerMove={armed ? handlePointerMove : undefined}
         onPointerLeave={() => setHoverHit(undefined)}
-        onClick={armed ? handleClick : undefined}
       >
         {showHover ? <OverlayBox hit={hoverHit} type="hover" /> : null}
         {selectedHit ? <OverlayBox hit={selectedHit} type="selection" /> : null}

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   createRecentWrites,
+  HMR_WATCH_IGNORED,
   hotUpdateMatches,
   invalidateModulesForWrite,
   isCssOnlyHotUpdate,
@@ -9,6 +10,12 @@ import {
   toRepoRel,
 } from "./hmrSuppress.ts";
 import type { ModuleGraph, ModuleNode } from "vite";
+
+describe("HMR_WATCH_IGNORED", () => {
+  it("ignores nested branch worktrees so editing one can't fire primary HMR", () => {
+    expect(HMR_WATCH_IGNORED).toContain("**/.designbook/worktrees/**");
+  });
+});
 
 describe("normalizeRel", () => {
   it("strips ./ and leading slashes and converts backslashes", () => {

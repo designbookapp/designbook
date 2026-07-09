@@ -17,20 +17,20 @@ import {
   cssWeightToFigmaStyle,
   formatRootMarker,
   ROOT_MARKER_VERSION,
-} from "../src/config/figmaRender.ts";
+} from "../src/plugins/figma/shared/figmaRender.ts";
 import type {
   PullRenderContext,
   RenderLayout,
   RenderNode,
   RenderPaint,
   RenderTree,
-} from "../src/config/figmaRender.ts";
-import { i18nBinding, isI18nSlotName } from "../src/config/figmaSlots.ts";
+} from "../src/plugins/figma/shared/figmaRender.ts";
+import { i18nBinding, isI18nSlotName } from "../src/plugins/figma/shared/figmaSlots.ts";
 import {
   collectMainSlots,
   slotDescriptorToPropertyDef,
   slotReferenceAspect,
-} from "../src/config/figmaComponentProps.ts";
+} from "../src/plugins/figma/shared/figmaComponentProps.ts";
 import type { Rgba } from "../src/config/color.ts";
 
 const NS = "designbook";

@@ -3,8 +3,9 @@ title: Adapters overview
 description: What adapters are, the ordered chain, and how theme/text/flags plug into the canvas.
 ---
 
-**Adapters** are how Designbook lets designers edit real things on the canvas — design
-tokens, translated copy, feature flags — with every edit written back to its source of truth.
+**Adapters** are how Designbook exposes each discipline's layer of the app as editable
+controls on the canvas — design tokens, translated copy, feature flags — with every edit
+written back to its source of truth.
 An adapter reads a source (your CSS, locale JSON, flag files), surfaces it as editable canvas
 controls scoped to the active context, and persists changes back to disk.
 

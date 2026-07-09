@@ -1,8 +1,10 @@
 # designbook
 
-Design workbench for React repos — a live canvas of your real components plus an embedded [Pi](https://github.com/badlogic/pi-mono) coding agent, aimed at designers making real edits in the repo.
+**One product. Every angle.**
 
-designbook **injects into your app's own Vite dev server**: it adds a toolbar pill that expands into a full-screen workbench overlay — canvas in the center, files/changes/Figma/adapters on the left, chat/props/code on the right. Your components render through your app's real bundler, styling, and providers — no second build, no copied config. A sidecar process serves the agent/API on a stable port and proxies your app behind it, so one URL survives restarts and crashes.
+designbook opens your React app from every angle — designers edit theme tokens, writers edit every string in every language, product flips feature flags, engineers see the code — all on the running app, with every edit landing as a real change in the repo. For bigger changes there's an embedded [Pi](https://github.com/badlogic/pi-mono) coding agent.
+
+designbook **injects into your app's own Vite dev server**: it adds a toolbar pill that expands into a full-screen workbench overlay — canvas in the center, files/changes/Figma/adapters on the left, chat/props/code on the right. Your components render through your app's real bundler, styling, and providers — no second build, no copied config. Every view is derived from the code — nothing is drawn by hand, so nothing drifts. A sidecar process serves the agent/API on a stable port and proxies your app behind it, so one URL survives restarts and crashes.
 
 ## Quickstart
 
@@ -61,7 +63,7 @@ pnpm --filter '@designbookapp/designbook' check-types  # tsc
 
 Pi credentials are resolved by the SDK's standard auth flow (`~/.pi/agent/auth.json`, then provider environment variables). Two ways to connect a model for the chat tab — the rest of the workbench works without one:
 
-- **OAuth / subscription** — run `npx pi` in your project (the CLI ships with designbook, no separate install), then `/login`. Credentials land in `~/.pi/agent/auth.json`; click **Retry connection** in the chat tab to pick them up without restarting.
+- **OAuth / subscription** — run `npx designbook login` in your project (the Pi CLI ships with designbook, no separate install), then `/login`. Credentials land in `~/.pi/agent/auth.json`; click **Retry connection** in the chat tab to pick them up without restarting. (`npx designbook pi …` is the general escape hatch that passes through to the bundled Pi CLI.)
 - **API key** — set a provider key, e.g. `ANTHROPIC_API_KEY`, in the shell that runs `npm run design`.
 
 Without either, the chat tab shows a setup callout instead of the prompt input.

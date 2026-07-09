@@ -1,0 +1,19 @@
+/* Fidelity harness theme tokens. The themeAdapter (fidelity.config.tsx) parses
+ * these custom properties into the Figma token source, so `token-colors`
+ * attributes its var()-driven colors/radii to data-token-* on pull.
+ *
+ * IMPORTANT: token attribution is by COMPUTED-VALUE match (var() identity is
+ * lost in computed styles — figmaSerialize buildTokenMaps), so every value
+ * here must be DISTINCT from any literal used by a non-token case, or those
+ * cases pick up false data-token-* attributions in their baselines (seen on
+ * the first real run: #2563eb / #ffffff / 8px collided with solid-bg,
+ * text-basic, and the gap/radius literals). Keep these values unique to
+ * token-colors. */
+:root {
+  --fidelity-bg: #7c3aed;
+  --fidelity-fg: #fefce8;
+  --fidelity-border: #312e81;
+  --fidelity-muted: #a1a1aa;
+  --fidelity-radius: 14px;
+  --fidelity-gap: 10px;
+}

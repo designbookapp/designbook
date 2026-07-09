@@ -8,9 +8,9 @@ import {
   useEffect,
   useRef,
   useState,
-  type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
+import { installToolIntercept } from "./toolIntercept";
 import { cn } from "@designbook-ui/lib/utils";
 import { elementsFromPointWithin } from "@designbook-ui/isolationContext";
 import {
@@ -540,7 +540,11 @@ function CanvasOverlay({
     onHover(undefined);
   }
 
-  function handleClick(event: ReactPointerEvent<HTMLDivElement>) {
+  // Selection handlers. Driven by the capture-phase interceptor (NOT React
+  // synthetic events): `installToolIntercept` swallows the full pointer
+  // sequence at the window before any app handler or default action can run,
+  // then calls these with the native event (coordinates + modifiers intact).
+  function handleClick(event: MouseEvent) {
     const target = elementUnderPointer(event.clientX, event.clientY);
     if (!target) {
       onSelect(undefined);
@@ -581,7 +585,7 @@ function CanvasOverlay({
     }
   }
 
-  function handleDoubleClick(event: ReactPointerEvent<HTMLDivElement>) {
+  function handleDoubleClick(event: MouseEvent) {
     const target = elementUnderPointer(event.clientX, event.clientY);
     if (!target) return;
 
@@ -597,8 +601,8 @@ function CanvasOverlay({
     onDrillChange(buildDrillStack(chain, resolved.drillPath));
   }
 
-  function handleContextMenu(event: ReactMouseEvent<HTMLDivElement>) {
-    event.preventDefault();
+  function handleContextMenu(event: MouseEvent) {
+    // No preventDefault needed — the interceptor already cancelled the event.
     const target = elementUnderPointer(event.clientX, event.clientY);
     if (!target) {
       setMenu(undefined);
@@ -618,6 +622,40 @@ function CanvasOverlay({
     setMenu({ x: event.clientX, y: event.clientY, hit });
   }
 
+  // Latest-closure trampoline for the interceptor (installed once below):
+  // the swallowed events must always reach the CURRENT handlers, which close
+  // over live drillStack/transform/menu state.
+  const interceptRef = useRef({
+    handleClick,
+    handleDoubleClick,
+    handleContextMenu,
+    closeMenu: () => setMenu(undefined),
+  });
+  interceptRef.current = {
+    handleClick,
+    handleDoubleClick,
+    handleContextMenu,
+    closeMenu: () => setMenu(undefined),
+  };
+
+  // Full capture-phase interception while the select tool is armed (this
+  // component's lifetime): NO app handler may fire from a selection click —
+  // see toolIntercept.ts for the leak vectors this closes. The tool's own
+  // click/dblclick/contextmenu logic runs from the interceptor instead of
+  // React (the swallowed events never reach React's root listeners).
+  useEffect(() => {
+    const layer = rootRef.current;
+    if (!layer) return;
+    return installToolIntercept(layer, {
+      // A press on the bare overlay dismisses an open context menu — the
+      // menu's own outside-pointerdown dismissal can't see swallowed events.
+      pointerdown: () => interceptRef.current.closeMenu(),
+      click: (event) => interceptRef.current.handleClick(event),
+      dblclick: (event) => interceptRef.current.handleDoubleClick(event),
+      contextmenu: (event) => interceptRef.current.handleContextMenu(event),
+    });
+  }, []);
+
   const showHover = hoverHit && hoverHit.instanceId !== selectedHit?.instanceId;
 
   return (
@@ -626,9 +664,6 @@ function CanvasOverlay({
       className="absolute inset-0 z-10"
       onPointerMove={handlePointerMove}
       onPointerLeave={handlePointerLeave}
-      onClick={handleClick}
-      onDoubleClick={handleDoubleClick}
-      onContextMenu={handleContextMenu}
       style={{ pointerEvents: "auto", cursor: "default" }}
     >
       <div

@@ -22,6 +22,7 @@
 
 import type { ComponentType, ReactNode } from "react";
 import type { LanguageOption } from "./index.ts";
+import type { SelectionContextContributor } from "./selectionContext.ts";
 
 /**
  * A rendered text node the tool is asking adapters to claim, plus the fiber
@@ -197,6 +198,13 @@ type AdapterSetup = {
     value: string,
     ctx: ContextState,
   ) => void | Promise<void>;
+  /**
+   * PREVIEW: contribute a section of selection context (Info panel + chat
+   * prompt) for the current canvas selection. Same hook integration plugins
+   * get via `PluginUiSpec.selectionContext` — see
+   * docs/specs/selection-context.md.
+   */
+  selectionContext?: SelectionContextContributor;
   // Back-compat locale fields (prefer a `locale` dimension):
   languages?: LanguageOption[];
   setLocale?: (locale: string) => Promise<void>;

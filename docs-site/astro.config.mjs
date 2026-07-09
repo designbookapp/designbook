@@ -9,9 +9,9 @@ export default defineConfig({
   integrations: [
     starlight({
       title: "Designbook",
-      tagline: "Design your product, not pictures of it",
+      tagline: "One product. Every angle.",
       description:
-        "Designbook is a design workbench for React repos: a live component canvas plus an embedded coding agent that turns design edits into real code.",
+        "Designbook opens your running React app as one structure with a live view per discipline — tokens, copy, flags, code — plus an embedded coding agent that lands every edit as real code.",
       customCss: ["./src/styles/custom.css"],
       social: [],
       sidebar: [
@@ -78,6 +78,7 @@ export default defineConfig({
             { label: "designbook init", slug: "reference/init" },
             { label: "designbook dev", slug: "reference/designbook-dev" },
             { label: "Security & trust model", slug: "reference/security" },
+            { label: "Integration plugins (experimental)", slug: "reference/integration-plugins" },
             { label: "Troubleshooting", slug: "reference/troubleshooting" },
           ],
         },

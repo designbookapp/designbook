@@ -1,7 +1,18 @@
 {
   "name": "@designbookapp/designbook",
-  "version": "0.3.1",
-  "description": "Design workbench for React repos — live component canvas plus a Pi coding agent, aimed at designers.",
+  "version": "0.4.0",
+  "description": "Your React app from every angle — edit theme tokens, copy, and feature flags on the running app; an embedded Pi coding agent lands every edit as code.",
+  "keywords": [
+    "design-tool",
+    "vite-plugin",
+    "design-tokens",
+    "i18n",
+    "feature-flags",
+    "figma",
+    "coding-agent",
+    "storybook-alternative",
+    "react"
+  ],
   "type": "module",
   "license": "MIT",
   "homepage": "https://designbook.app",
@@ -24,6 +35,10 @@
       "types": "./dist/config/index.d.ts",
       "default": "./dist/config/index.js"
     },
+    "./integration": {
+      "types": "./dist/integration/index.d.ts",
+      "default": "./dist/integration/index.js"
+    },
     "./adapters": {
       "types": "./src/ui/adapters/index.ts",
       "default": "./dist/ui/adapters.js"
@@ -38,7 +53,7 @@
   "files": [
     "bin",
     "dist",
-    "skills",
+    "src/plugins",
     "src/ui",
     "src/config"
   ],
@@ -49,6 +64,7 @@
     "check-types": "tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.ui.json --noEmit",
     "check-types:figma-plugin": "tsc -p figma-plugin/tsconfig.json",
     "test:run": "vitest run",
+    "test:figma": "node --experimental-strip-types test/figma-fidelity/run.ts",
     "lint:layers": "node scripts/layer-lint.mjs",
     "build:figma-plugin": "node figma-plugin/build.mjs"
   },
@@ -102,6 +118,9 @@
     "@types/react-dom": "^19.1.0",
     "@types/ws": "^8.18.1",
     "esbuild": "^0.28.1",
+    "pixelmatch": "^6.0.0",
+    "playwright-core": "^1.49.0",
+    "pngjs": "^7.0.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "typescript": "^5.9.2",

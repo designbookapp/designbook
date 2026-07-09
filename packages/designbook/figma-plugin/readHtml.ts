@@ -18,11 +18,11 @@
  * Framework-free beyond the Figma plugin API; ES2017-safe.
  */
 
-import { htmlNodeToString, type HtmlNode } from "../src/config/figmaHtml.ts";
+import { htmlNodeToString, type HtmlNode } from "../src/plugins/figma/shared/figmaHtml.ts";
 import {
   i18nValueFromSlotName,
   isI18nSlotName,
-} from "../src/config/figmaSlots.ts";
+} from "../src/plugins/figma/shared/figmaSlots.ts";
 import {
   figmaNodeToCss,
   isStretchDefault,
@@ -31,9 +31,9 @@ import {
   type SnapshotBoundTokens,
   type SnapshotEffect,
   type SnapshotPaint,
-} from "../src/config/figmaReadCss.ts";
-import { parseRootMarker } from "../src/config/figmaRender.ts";
-import type { PullRenderContext } from "../src/config/figmaRender.ts";
+} from "../src/plugins/figma/shared/figmaReadCss.ts";
+import { parseRootMarker } from "../src/plugins/figma/shared/figmaRender.ts";
+import type { PullRenderContext } from "../src/plugins/figma/shared/figmaRender.ts";
 import type { Rgba } from "../src/config/color.ts";
 
 const NS = "designbook";

@@ -77,6 +77,14 @@ type ModelOption = {
 };
 
 type DesignState = {
+  /**
+   * Branch-session scoping key (per-branch-sessions spec). ABSENT = the
+   * primary checkout's session — the wire-compat encoding. The chat drops
+   * any pi-event whose `branch` doesn't match this.
+   */
+  branch?: string;
+  /** Display branch name of the session's worktree (primary included). */
+  branchName?: string;
   cwd: string;
   isStreaming: boolean;
   messages: RawAgentMessage[];
@@ -88,6 +96,8 @@ type DesignState = {
 
 type PiEvent = {
   type?: string;
+  /** Originating branch session; ABSENT = primary (wire compat). */
+  branch?: string;
   message?: RawAgentMessage;
   assistantMessageEvent?: {
     type?: string;

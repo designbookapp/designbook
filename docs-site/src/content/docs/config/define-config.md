@@ -34,6 +34,7 @@ contains no repo-specific paths.
 | `adapters` | `Adapter[]` | Text/editing adapters, run as an ordered chain. See [Adapters](/adapters/overview/). |
 | `themes` | `ThemeOption[]` | Preset theme options that inject canvas-scoped CSS custom properties. See below. |
 | `viewports` | `ViewportSize[]` | Named preview widths (`{ id, label, width }`). |
+| `integrations` | `Record<string, boolean \| object>` | Tool integrations, keyed by name. Built-ins (`figma`) are on by default; `false` disables one, an object passes its options. See [Integration plugins](/reference/integration-plugins/). |
 
 ## `datasets` — `PreviewDataset`
 

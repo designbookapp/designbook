@@ -62,6 +62,9 @@ function CanvasContextMenu({
   return (
     <div
       ref={menuRef}
+      // Interactive tool chrome: exempts the menu's events from the select
+      // tool's capture-phase interception (toolIntercept.ts).
+      data-db-tool-ui=""
       className="fixed z-50 min-w-40 rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
       style={{ left: x, top: y }}
       // Keep every pointer/mouse event inside the menu away from the canvas

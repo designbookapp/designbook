@@ -40,22 +40,24 @@ plugin connects at a time.
    `ws://localhost:<port>/api/figma-bridge`. It reconnects automatically if the connection
    drops.
 
-The workbench shows connection status (backed by `GET /api/figma/status`). Actions that need
-the plugin — the theme adapter's Figma sync, component push/pull — are enabled only while it's
-connected.
+The workbench shows connection status on the Figma tab (backed by
+`GET /api/x/figma/status`). Actions that need the plugin — variable sync, component
+push/pull — are enabled only while it's connected.
 
 ## Token ↔ variable sync
 
-The [theme adapter](/adapters/theme/) can sync your design tokens with a Figma **variable
-collection** (default name `designbook/theme`):
+The Figma tab syncs the [theme adapter](/adapters/theme/)'s design tokens with a Figma
+**variable collection** (default name `designbook/theme`):
 
 - **Sync to Figma** creates/updates variables from your tokens — COLOR, FLOAT, and STRING
   types, with per-mode values (light/dark map to Figma modes).
 - **Sync from Figma** reads variable values back and writes changed ones into your theme
   source through the adapter's normal write-back.
 
-Token ↔ variable naming follows the adapter's `nameRule` / `nameMapFile`. On Figma plans that
-limit a collection to one mode, extra modes are reported as skipped in the result.
+Token ↔ variable naming follows the Figma integration's `tokens.nameRule` /
+`tokens.nameMapFile` options (see [Integration plugins](/reference/integration-plugins/)).
+On Figma plans that limit a collection to one mode, extra modes are reported as skipped in
+the result.
 
 ## Push components to Figma
 

@@ -31,7 +31,17 @@ import type { ModuleGraph } from "vite";
  * change never fires a full-reload. In the injected plugin these MERGE with the
  * target app's own ignores (Vite `mergeConfig` concatenates arrays).
  */
-export const HMR_WATCH_IGNORED = ["**/locales/**", "**/*.po"];
+export const HMR_WATCH_IGNORED = [
+  "**/locales/**",
+  "**/*.po",
+  // Nested branch worktrees live at `<repoRoot>/.designbook/worktrees/<branch>`
+  // and carry a FULL app checkout (src + node_modules). When the primary app's
+  // Vite root contains the repo root (the common single-app topology), editing
+  // inside a worktree must not fire the PRIMARY server's HMR/full-reload — those
+  // files aren't in its module graph, but a bare add/change under root can still
+  // trip a reload. Ignoring the dir keeps the primary watcher off it entirely.
+  "**/.designbook/worktrees/**",
+];
 
 /**
  * Extensions of managed writes that stay in the watch graph (flag JSON, token

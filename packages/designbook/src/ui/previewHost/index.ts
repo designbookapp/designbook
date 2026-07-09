@@ -12,8 +12,10 @@
  * The point of the seam is the future protocol line: a Model-A shell renders the
  * preview in a separate document (iframe / native surface) and implements the
  * same surface over `postMessage`. UI components must therefore depend ONLY on
- * this module, never on `fibers`/`figmaSerialize` directly — a unit test
- * (`previewHostSeam.test.ts`) greps `components/**` and fails if they do.
+ * this module, never on `fibers` directly — a unit test
+ * (`previewHostSeam.test.ts`) greps `components/**` and fails if it happens.
+ * (The Figma serializer itself moved into the figma integration plugin —
+ * src/plugins/figma/ui/serialize.ts — and consumes THIS seam.)
  *
  * The `PreviewHost` interface below documents that surface as an object shape;
  * `sameDocumentPreviewHost` is the concrete binding. Existing call sites use the
@@ -29,7 +31,6 @@ import {
   hitTestChain,
   unionRects,
 } from "./fibers";
-import { serializeComponent } from "./figmaSerialize";
 
 // ---------------------------------------------------------------------------
 // Same-document implementation surface — re-exported verbatim.
@@ -61,12 +62,16 @@ export type {
   SubtreeNode,
 } from "./fibers";
 
-// Figma serialization (computed-style reads over the preview subtree).
-export { serializeComponent } from "./figmaSerialize";
-export type { SerializeOptions, SerializeResult } from "./figmaSerialize";
-
 // Host-app React Context reading (C4.3 host-context adapters).
 export { readFiberContext } from "./fiberContext";
+
+// Selection-context walkers (Info panel contributors — PREVIEW).
+export { collectContextScope, collectRenderedText } from "./selectionInspect";
+export type {
+  ContextScopeEntry,
+  RenderedTextEntry,
+  RenderedTextResult,
+} from "./selectionInspect";
 
 // Same-origin iframe binding of the seam.
 export {
@@ -140,8 +145,6 @@ interface PreviewHost {
   getFiberRects: typeof getFiberRects;
   /** Union of a set of rects (selection outline). */
   unionRects: typeof unionRects;
-  /** Serialize a preview subtree to the Figma render tree (computed-style reads). */
-  serializeComponent: typeof serializeComponent;
 }
 
 /** The current, same-document implementation of {@link PreviewHost}. */
@@ -152,7 +155,6 @@ const sameDocumentPreviewHost: PreviewHost = {
   getDomInstanceId,
   getFiberRects,
   unionRects,
-  serializeComponent,
 };
 
 export { sameDocumentPreviewHost };

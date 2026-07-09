@@ -13,7 +13,10 @@ import {
 } from "@designbook-ui/workbenchPersist";
 import { cn } from "@designbook-ui/lib/utils";
 import { BranchSelector } from "./BranchSelector";
-import { useWorktrees } from "@designbook-ui/models/branch/useWorktrees";
+import {
+  shouldAutoSwitchBranch,
+  useWorktrees,
+} from "@designbook-ui/models/branch/useWorktrees";
 import { BranchProvider } from "@designbook-ui/models/branch/BranchProvider";
 import { useChanges } from "@designbook-ui/models/branch/useChanges";
 import { ChangesProvider } from "@designbook-ui/models/branch/ChangesProvider";
@@ -43,6 +46,10 @@ import { FrameProvider } from "@designbook-ui/models/frame/FrameProvider";
 import { AppFrameOverlay } from "./AppFrameOverlay";
 import { AppFrameTextOverlay } from "./AppFrameTextOverlay";
 import { buildFramePromptPrefill } from "@designbook-ui/models/frame/appFrameHit";
+import {
+  appPageSelectDismissed,
+  shouldArmAppPageSelect,
+} from "@designbook-ui/models/frame/appPageTool";
 import { SideRail, type PanelTab } from "@designbook-ui/components/SideRail";
 import { RightPanel } from "@designbook-ui/components/RightPanel";
 import { PanelResizeHandle } from "@designbook-ui/components/PanelResizeHandle";
@@ -54,9 +61,9 @@ import {
 import { CodePanel } from "./panels";
 import { ChangesPanel } from "./ChangesPanel";
 import { AdapterPanel } from "./AdapterPanel";
-import { FigmaPanel } from "./FigmaPanel";
 import { FilesPanel } from "./FilesPanel";
-import { PropsPanel } from "./PropsPanel";
+import { InfoPanel } from "./InfoPanel";
+import { runSelectionContext } from "@designbook-ui/models/selectionContext/store";
 import { flows, getFlowForScreen, getFlowScreen } from "@designbook-ui/models/catalog/flows";
 import type { FlowScreen } from "@designbook-ui/models/catalog/flowSpec";
 import { getRegistryEntry } from "@designbook-ui/models/catalog/componentRegistry";
@@ -69,7 +76,15 @@ import {
 } from "@designbook-ui/navigationBus";
 import { CatalogProvider, useCatalogModel } from "@designbook-ui/models/catalog/CatalogProvider";
 import { SelectionProvider } from "@designbook-ui/models/selection/SelectionProvider";
+import { VariationsProvider } from "@designbook-ui/models/variations/VariationsProvider";
 import type { CanvasNodeSelection } from "@designbook-ui/types";
+import { apiUrl } from "@designbook-ui/designbook";
+import {
+  getIntegrationTabs,
+  getTokenSources,
+  subscribeTokenSources,
+} from "@designbook-ui/integrations";
+import { useSyncExternalStore } from "react";
 
 const copy = {
   retryButton: "Retry",
@@ -169,7 +184,9 @@ function Workbench() {
         })
       }
     >
-      <WorkbenchContent persist={persist} worktrees={worktrees} />
+      <VariationsProvider>
+        <WorkbenchContent persist={persist} worktrees={worktrees} />
+      </VariationsProvider>
     </CatalogProvider>
   );
 }
@@ -255,9 +272,31 @@ function WorkbenchContent({
     });
   }
 
+  /** Integration-seam chat handoff (PluginScreenProps.openChat): with a
+   * prompt, drafts it (send stays the user's confirm gate); without one,
+   * just reveals the chat tab. */
+  function openChatFromIntegration(promptText?: string) {
+    if (promptText !== undefined) {
+      draftPromptToChat(promptText);
+      return;
+    }
+    openRightTab("chat");
+  }
+
   // App page is injected-mode only — host mode never resolves an
   // app route even if one is somehow in the (hash) URL.
   const showAppPage = routing === "memory" && appPath !== undefined;
+
+  // The App page defaults the SELECT tool ON every time it becomes active, so
+  // users aren't left clicking the live app with nothing happening — UNLESS
+  // they explicitly turned select off earlier this session. Session-only
+  // (a ref, never persisted); `onToolChange` below updates it.
+  const appSelectDismissedRef = useRef(false);
+  useEffect(() => {
+    if (showAppPage && shouldArmAppPageSelect(appSelectDismissedRef.current)) {
+      setTool("select");
+    }
+  }, [showAppPage]);
 
   // Write-through of the simple scalar UI state. Each effect also fires on
   // mount, harmlessly re-writing the value it was seeded with (StrictMode's
@@ -286,8 +325,17 @@ function WorkbenchContent({
     (nodeIds.length > 0 ? getFlowForScreen(nodeIds[0]) : undefined) ??
     flows[0];
 
+  // Hash-mode deep links (#/b/<branch>/…) drive a server switch. Memory
+  // (injected) routing NEVER auto-switches from the route: its branch is
+  // restored from the reload-persist blob, which is stale right after a proxy
+  // branch switch — switching on it would silently revert the switch the user
+  // just made (the "switched back to main" bug). See shouldAutoSwitchBranch;
+  // memory mode reconciles the route to the server instead (useCanvasRoute).
   useEffect(() => {
-    if (urlBranch && currentBranch && urlBranch !== currentBranch) {
+    if (
+      urlBranch &&
+      shouldAutoSwitchBranch(routing, urlBranch, currentBranch)
+    ) {
       void switchBranch(urlBranch, nodeIds, flowId);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only run when the branches involved change
@@ -312,6 +360,19 @@ function WorkbenchContent({
   }, [adapterRuntime]);
   const activeAdapterTab = adapterRuntime.tabs.find(
     (tab) => tab.id === activeTab,
+  );
+  // Integration plugin tabs (e.g. Figma), resolved at mount time by
+  // initUiIntegrations; their Screens get the PluginScreenProps seam.
+  const integrationTabs = getIntegrationTabs();
+  const activeIntegrationTab = integrationTabs.find(
+    (tab) => tab.id === activeTab,
+  );
+  // Neutral theme-token sources adapters published (list identity changes on
+  // register/unregister; values are read lazily via getTokens()).
+  const tokenSources = useSyncExternalStore(
+    subscribeTokenSources,
+    getTokenSources,
+    getTokenSources,
   );
   const [themeId, setThemeId] = useState(
     () => init.themeId ?? themeOptions[0]?.id ?? "",
@@ -378,7 +439,15 @@ function WorkbenchContent({
   function resetToolsOnFrameNavigation() {
     setSelectedHit(undefined);
     setDrillStack([]);
-    setTool("preview");
+    // Selection/drill state is stale against the new frame document, but the
+    // App page's default is select ON — every frame load (the INITIAL one
+    // included, which fires right after the arm-on-entry effect) re-arms it
+    // unless the user explicitly turned select off this session.
+    setTool(
+      showAppPage && shouldArmAppPageSelect(appSelectDismissedRef.current)
+        ? "select"
+        : "preview",
+    );
   }
   // A persisted selection to replay after the entry renders. Blocks
   // selection write-through until CanvasOverlay has restored (or dropped) it,
@@ -399,6 +468,14 @@ function WorkbenchContent({
 
   const nodePath = nodeIds.length > 0 ? resolveScreenPath(nodeIds) : undefined;
   const routeKey = showAppPage ? "app" : nodeIds.join("/");
+
+  const prevRouteKeyRef = useRef(routeKey);
+  useEffect(() => {
+    if (prevRouteKeyRef.current === routeKey) return;
+    prevRouteKeyRef.current = routeKey;
+    setSelectedHit(undefined);
+    setDrillStack([]);
+  }, [routeKey]);
 
   // Persist the canvas selection as a durable structural address. Held
   // off until any pending restore is consumed so we don't overwrite it with the
@@ -446,13 +523,43 @@ function WorkbenchContent({
           }
         : undefined));
 
+  // Selection-context run (PREVIEW — docs/specs/selection-context.md): re-run
+  // the registered contributors whenever the selection changes, snapshotting
+  // the live hit handle + changed-files list at run time (contributors never
+  // subscribe to live stores; the Info panel's refresh re-runs manually).
+  const changesRef = useRef(changesState.changes);
+  changesRef.current = changesState.changes;
+  useEffect(() => {
+    runSelectionContext(
+      selection
+        ? {
+            node: selection,
+            live: selectedHit
+              ? {
+                  entryId: selectedHit.entry.id,
+                  instanceId: selectedHit.instanceId,
+                  fiber: selectedHit.fiber,
+                  anchor: selectedHit.anchor,
+                }
+              : undefined,
+            changes: changesRef.current,
+          }
+        : undefined,
+      { apiUrl },
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `selection` is
+    // derived fresh each render; run on its STATE sources so identity churn
+    // doesn't re-run contributors every render.
+  }, [selectedHit, goToSelection, selectedFlowScreen]);
+
   const activeEntryId =
     nodeIds.length > 0 ? nodeIds[nodeIds.length - 1] : undefined;
 
-  // The open component entry the Figma tab targets — same gate NodeDetailView
-  // uses for its header sync controls (the entry's preview must be on canvas
-  // for push to have something to serialize).
-  const figmaEntry = activeEntryId ? getRegistryEntry(activeEntryId) : undefined;
+  // The open component entry integration tabs target (e.g. Figma push/pull) —
+  // the entry's preview must be on canvas for a serialize to have a target.
+  const integrationEntry = activeEntryId
+    ? getRegistryEntry(activeEntryId)
+    : undefined;
 
   function openEntry(entryId: string) {
     setGoToSelection(undefined);
@@ -606,6 +713,7 @@ function WorkbenchContent({
           loaded: worktreesLoaded,
           switching,
           error,
+          agentStatuses: worktreesState.agentStatuses,
         }}
         switchBranch={(branch) => void switchBranch(branch, nodeIds, flowId)}
         retry={retry}
@@ -647,6 +755,7 @@ function WorkbenchContent({
       <SideRail
         activeTab={activeTab}
         onSelectTab={setActiveTab}
+        integrationTabs={integrationTabs}
         adapterTabs={adapterRuntime.tabs}
       />
       <aside
@@ -690,18 +799,20 @@ function WorkbenchContent({
             />
           ) : null}
           {activeTab === "changes" ? <ChangesPanel /> : null}
-          {activeTab === "figma" ? (
-            <FigmaPanel
+          {activeIntegrationTab ? (
+            <activeIntegrationTab.Screen
               entry={
-                figmaEntry
+                integrationEntry
                   ? {
-                      id: figmaEntry.id,
-                      label: figmaEntry.label,
-                      sourcePath: figmaEntry.sourcePath,
+                      id: integrationEntry.id,
+                      label: integrationEntry.label,
+                      sourcePath: integrationEntry.sourcePath,
                     }
                   : undefined
               }
-              onAddToChat={draftPromptToChat}
+              apiUrl={apiUrl}
+              openChat={openChatFromIntegration}
+              tokenSources={tokenSources}
             />
           ) : null}
           {activeAdapterTab ? <AdapterPanel tab={activeAdapterTab} /> : null}
@@ -747,6 +858,9 @@ function WorkbenchContent({
                 datasetId={dataset.id}
                 datasets={previewDatasets}
                 onDatasetChange={setDatasetId}
+                onLayoutChange={(nodeId, layout) =>
+                  setNodeLayouts((current) => ({ ...current, [nodeId]: layout }))
+                }
                 themeClassName={previewThemeClass}
               />
             ) : showAppPage ? (
@@ -789,6 +903,12 @@ function WorkbenchContent({
           tool={tool}
           onToolChange={(nextTool) => {
             setTool(nextTool);
+            // On the App page, remember a manual switch AWAY from select for
+            // the rest of the session so re-entering doesn't re-arm it (and a
+            // switch back to select clears that memory).
+            if (showAppPage) {
+              appSelectDismissedRef.current = appPageSelectDismissed(nextTool);
+            }
             if (nextTool !== "select") {
               setSelectedHit(undefined);
               setDrillStack([]);
@@ -813,9 +933,7 @@ function WorkbenchContent({
             embedded
           />
         ) : null}
-        {rightTab === "props" ? (
-          <PropsPanel selectedNode={selection} selectedHit={selectedHit} />
-        ) : null}
+        {rightTab === "info" ? <InfoPanel selectedNode={selection} /> : null}
         {rightTab === "code" ? (
           <CodePanel selectedNode={selection} diffFile={diffFile} />
         ) : null}

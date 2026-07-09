@@ -6,6 +6,26 @@
  * in / string out — no I/O, no Node server objects.
  */
 
+import { isAbsolute, join, relative } from "node:path";
+
+/**
+ * Where to spawn the target dev command after retargeting the proxy to a
+ * branch worktree: the same app-package directory, relative to the new
+ * worktree root (in a monorepo `targetCwd` is the app package, NOT the git
+ * root). If the target cwd is the repo root itself, the worktree root is the
+ * answer; if it somehow lives outside the repo, it is left untouched.
+ */
+function worktreeTargetCwd(
+  projectRoot: string,
+  targetCwd: string,
+  worktreePath: string,
+): string {
+  const rel = relative(projectRoot, targetCwd);
+  if (!rel || rel === ".") return worktreePath;
+  if (rel.startsWith("..") || isAbsolute(rel)) return targetCwd;
+  return join(worktreePath, rel);
+}
+
 /** Strip ANSI color escapes so log parsing sees plain text. */
 function stripAnsi(line: string): string {
   // eslint-disable-next-line no-control-regex
@@ -48,6 +68,52 @@ function restartDelayMs(consecutiveFailures: number): number {
     Math.min(consecutiveFailures, RESTART_BACKOFF_MS.length - 1),
   );
   return RESTART_BACKOFF_MS[i];
+}
+
+/**
+ * Warm dev-server cap (per-branch-sessions spec): dev servers spawn lazily on
+ * first VIEW of a branch and stay warm when switching away, so switching back
+ * is instant. At most this many stay warm; beyond it the least-recently-viewed
+ * is stopped (never the currently-viewed one). Agent sessions are unaffected
+ * by dev-server stops — editing needs no dev server — and returning to an
+ * evicted branch respawns behind the recovery page. With a FORCED
+ * `--target-port` the effective cap is 1 (N servers can't share one port).
+ */
+const MAX_WARM_TARGET_SERVERS = 3;
+
+/**
+ * Which warm dev servers to stop to respect the cap: the least-recently-used
+ * first, never the active one. `entries` includes the active entry; the cap
+ * counts it too.
+ */
+function selectTargetEvictions(
+  entries: Array<{ key: string; lastUsedAt: number }>,
+  activeKey: string,
+  cap: number,
+): string[] {
+  const excess = entries.length - Math.max(1, cap);
+  if (excess <= 0) return [];
+  return entries
+    .filter((entry) => entry.key !== activeKey)
+    .sort((a, b) => a.lastUsedAt - b.lastUsedAt)
+    .slice(0, excess)
+    .map((entry) => entry.key);
+}
+
+/**
+ * Forced-target-port retarget ordering (stop-then-spawn): whether the new
+ * active dev server may spawn immediately. With a forced `--target-port`, an
+ * evicted previous server still owns THE one port until its process tree
+ * fully exits — spawning before that would make a `--strictPort` dev server
+ * exit instantly. So the spawn must wait for the eviction's exit callback
+ * (the recovery page covers the gap). Auto-port mode (or nothing evicted)
+ * spawns right away.
+ */
+function spawnImmediatelyOnRetarget(
+  forcedPort: boolean,
+  evictionCount: number,
+): boolean {
+  return !forcedPort || evictionCount === 0;
 }
 
 /** The namespace designbook's own api lives under on the proxy origin. */
@@ -310,10 +376,14 @@ export {
   DESIGNBOOK_NS,
   escapeHtml,
   FAILURE_SUMMARY_THRESHOLD,
+  MAX_WARM_TARGET_SERVERS,
   parseTargetPort,
   recoveryPageHtml,
   RESTART_BACKOFF_MS,
   restartDelayMs,
+  selectTargetEvictions,
+  spawnImmediatelyOnRetarget,
   stripAnsi,
   stripDesignbookNamespace,
+  worktreeTargetCwd,
 };

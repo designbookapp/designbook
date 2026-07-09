@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { buildHash, parseHashString } from "@designbook-ui/models/catalog/useCanvasRoute";
+import {
+  buildHash,
+  parseHashString,
+  reconcileRouteBranch,
+} from "@designbook-ui/models/catalog/useCanvasRoute";
 
 describe("app route", () => {
   it("builds an app hash carrying the path", () => {
@@ -39,5 +43,48 @@ describe("app route", () => {
   it("a non-app route has no appPath", () => {
     const route = parseHashString("#/b/main/component/product.Card");
     expect(route.appPath).toBeUndefined();
+  });
+});
+
+describe("reconcileRouteBranch (memory route follows the server after a proxy switch)", () => {
+  const staleRoute = {
+    branch: "main",
+    flowId: "booking",
+    nodeIds: ["product.Card"],
+    appPath: undefined,
+  };
+
+  it("memory mode: snaps a stale persisted branch to the live one, keeping the rest", () => {
+    // The exact post-switch reload state: the persist blob still says "main",
+    // the server is already on the new branch. Without this, the workbench
+    // auto-switched back — the "switched back to main" bug.
+    expect(reconcileRouteBranch(staleRoute, "design/hero", true)).toEqual({
+      ...staleRoute,
+      branch: "design/hero",
+    });
+  });
+
+  it("no-op when the branches already agree", () => {
+    expect(reconcileRouteBranch(staleRoute, "main", true)).toBeUndefined();
+  });
+
+  it("no-op when the route has no branch yet (fresh session)", () => {
+    expect(
+      reconcileRouteBranch(
+        { branch: undefined, flowId: undefined, nodeIds: [] },
+        "main",
+        true,
+      ),
+    ).toBeUndefined();
+  });
+
+  it("no-op while the server branch is still unknown", () => {
+    expect(reconcileRouteBranch(staleRoute, undefined, true)).toBeUndefined();
+  });
+
+  it("hash mode never reconciles (its URL branch is an explicit deep link)", () => {
+    expect(
+      reconcileRouteBranch(staleRoute, "design/hero", false),
+    ).toBeUndefined();
   });
 });

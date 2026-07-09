@@ -63,67 +63,6 @@ import {
   type Oklch,
   type Rgba,
 } from "./color.ts";
-import {
-  buildNameMap,
-  collectionToTokens,
-  derivedDimensionsToVariables,
-  tokensToCollection,
-  type FigmaCollection,
-  type FigmaVarType,
-  type FigmaVarValue,
-  type FigmaVariable,
-  type NameMap,
-} from "./figmaTokens.ts";
-import {
-  blockStackGap,
-  cssWeightToFigmaStyle,
-  decideTextSizing,
-  flexToLayout,
-  formatRootMarker,
-  parseRootMarker,
-  ROOT_MARKER_VERSION,
-  hashRenderTree,
-  parseBoxShadow,
-  parseLinearGradient,
-  styleToVisuals,
-  type PullRenderContext,
-  type RenderChildComponent,
-  type RenderEffect,
-  type RenderLayout,
-  type RenderNode,
-  type RenderNodeType,
-  type RenderOccurrence,
-  type RenderPaint,
-  type RenderStroke,
-  type RenderText,
-  type RenderTree,
-  type RenderTreeMeta,
-  type RenderVisuals,
-  type RootMarker,
-  type StyleRecord,
-} from "./figmaRender.ts";
-import {
-  htmlNodeToString,
-  type HtmlNode,
-  type HtmlTokenMap,
-} from "./figmaHtml.ts";
-import {
-  figmaNodeToCss,
-  figmaStyleToCssWeight,
-  isStretchDefault,
-  type FigmaNodeSnapshot,
-  type ParentLayoutContext,
-  type ReadCssResult,
-  type SnapshotBoundTokens,
-  type SnapshotEffect,
-  type SnapshotGradientPaint,
-  type SnapshotPaint,
-  type SnapshotSolidPaint,
-} from "./figmaReadCss.ts";
-import {
-  formatPullPrompt,
-  type PullPromptContext,
-} from "./figmaPullPrompt.ts";
 
 type MatrixAxis = {
   name: string;
@@ -319,6 +258,16 @@ type DesignbookConfig = {
   hostContext?: Record<string, HostContextSource>;
   /** Live-page text editing hooks. See {@link PageTextConfig}. */
   pageText?: PageTextConfig;
+  /**
+   * Integration plugins (EXPERIMENTAL), keyed by integration name. Built-ins
+   * (currently `figma`) are default-ON; `false` disables one, an object
+   * passes its options — e.g.
+   * `integrations: { figma: { tokens: { collection, nameRule, nameMapFile } } }`
+   * or `integrations: { figma: false }`. Third-party integrations (later) are
+   * always explicit. Node-side, built-in opt-out is read via a literal
+   * source scan (the config never evaluates in node) — keep toggles literal.
+   */
+  integrations?: Record<string, boolean | Record<string, unknown>>;
 };
 
 function defineConfig(config: DesignbookConfig): DesignbookConfig {
@@ -502,50 +451,37 @@ function useDataset<Data = unknown>(): PreviewDataset<Data> {
 }
 
 export {
-  buildNameMap,
-  collectionToTokens,
-  cssWeightToFigmaStyle,
   DatasetContext,
   defaultDataset,
-  decideTextSizing,
   defineConfig,
-  figmaNodeToCss,
-  figmaStyleToCssWeight,
-  flexToLayout,
-  blockStackGap,
-  derivedDimensionsToVariables,
   evaluateCssDimension,
-  formatRootMarker,
   fromGlob,
-  isStretchDefault,
-  formatPullPrompt,
-  htmlNodeToString,
   lazy,
   formatOklch,
-  hashRenderTree,
   hexToRgb,
   inferTokenType,
   oklchToHex,
   oklchToRgb,
-  parseBoxShadow,
   parseCssColor,
   parseCssTokens,
   parseJsonTokens,
-  parseLinearGradient,
   parseOklch,
   parseRadiusScale,
-  parseRootMarker,
   parseVariantOverrides,
   readLazyMeta,
   resolveTokenValue,
   resolveVariantModel,
   rgbToHex,
   rgbToOklch,
-  ROOT_MARKER_VERSION,
-  styleToVisuals,
-  tokensToCollection,
   useDataset,
 };
+export type {
+  SelectionContextContribution,
+  SelectionContextContributor,
+  SelectionContextFact,
+  SelectionContextRunCtx,
+  SelectionContextSelection,
+} from "./selectionContext.ts";
 export type {
   Adapter,
   AdapterLocaleSetup,
@@ -560,52 +496,21 @@ export type {
   DesignbookConfig,
   EditableProp,
   EntryOverride,
-  FigmaCollection,
-  FigmaNodeSnapshot,
-  FigmaVarType,
-  FigmaVarValue,
-  FigmaVariable,
   Flow,
   FlowPreview,
   FlowScreen,
   FromGlobOptions,
   HostContextSource,
-  HtmlNode,
-  HtmlTokenMap,
   I18nConfig,
   LanguageOption,
   LazyComponentSource,
   MatrixAxis,
-  NameMap,
   Oklch,
   PageTextConfig,
-  ParentLayoutContext,
   PlaceholderMeta,
   PluralForm,
   PreviewDataset,
-  PullPromptContext,
-  PullRenderContext,
-  ReadCssResult,
-  RenderChildComponent,
-  RenderEffect,
-  RenderLayout,
-  RenderNode,
-  RenderNodeType,
-  RenderOccurrence,
-  RenderPaint,
-  RenderStroke,
-  RenderText,
-  RenderTree,
-  RenderTreeMeta,
-  RenderVisuals,
   Rgba,
-  RootMarker,
-  SnapshotBoundTokens,
-  SnapshotEffect,
-  SnapshotGradientPaint,
-  SnapshotPaint,
-  SnapshotSolidPaint,
-  StyleRecord,
   TextAdapter,
   TextClaim,
   TextNodeHit,

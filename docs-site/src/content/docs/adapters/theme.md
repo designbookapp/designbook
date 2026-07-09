@@ -34,7 +34,6 @@ adapters: [
 | `id` | `string` | Adapter name + dimension namespace. Default `"theme"`. |
 | `label` | `string` | Tab label. Default `"Theme"`. |
 | `icon` | `string` | Tab/side-rail icon name. Default `"palette"`. |
-| `figma` | object | Figma variable sync (see below). |
 
 ### CSS vs. JSON source
 
@@ -80,20 +79,25 @@ adapter single-variant.
 
 ## Figma variable sync
 
-Set `figma` to add **Sync to Figma** / **Sync from Figma** actions to the Theme tab, enabled
-only while the [Figma plugin](/figma/) is connected. "Sync to Figma" pushes the active
-variant's tokens to a Figma variable collection; "Sync from Figma" pulls matching variable
-values back into your theme source.
+The **Sync to Figma** / **Sync from Figma** buttons live on the **Figma tab** (left rail):
+"Sync to Figma" pushes the active variant's tokens to a Figma variable collection; "Sync
+from Figma" pulls matching variable values back into your theme source through the adapter's
+normal write-back. The adapter itself only publishes a neutral token source — collection and
+naming options belong to the Figma integration in your config:
 
 ```tsx
-figma: {
-  collection: "designbook/theme",   // target collection name (default)
-  nameRule: (token) => token,       // token name → Figma variable name (default identity)
-  nameMapFile: "./tokens.map.json", // repo-relative JSON { tokenName: figmaName }; overrides win
+integrations: {
+  figma: {
+    tokens: {
+      collection: "designbook/theme",   // target collection name (default)
+      nameRule: (token) => token,       // token name → Figma variable name (default identity)
+      nameMapFile: "./tokens.map.json", // repo-relative JSON { tokenName: figmaName }; overrides win
+    },
+  },
 },
 ```
 
 Token ↔ variable naming is `nameRule` (default identity), overlaid by the optional
 `nameMapFile`. On non-enterprise Figma plans that limit a collection to one mode, extra modes
 are reported as skipped in the sync result. See [Figma integration](/figma/) for the plugin
-and connection.
+and connection, and [Integration plugins](/reference/integration-plugins/) for the seam.

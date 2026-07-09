@@ -1,0 +1,286 @@
+/**
+ * The core device bridge (G1a — promoted from the Figma bridge, which was
+ * already tool-agnostic): a WebSocket relay between designbook and an external
+ * tool that cannot listen on a socket itself (a Figma plugin, a device
+ * preview app, …). The tool opens the connection *outbound* to
+ * `/api/bridge/<name>` — designbook is the WS server, the tool is the client.
+ * Only one connection per bridge is supported at a time; a new `hello`
+ * replaces whatever socket was previously attached.
+ *
+ * Integrations request one via `PluginNodeSpec.bridge`; core creates it and
+ * hands it to routes/tools/events as `ctx.bridge`. This is the ONLY WS-upgrade
+ * surface integrations get.
+ *
+ * Wire protocol:
+ *   tool -> server (on connect):  { type: "hello", protocol, fileKey, fileName, page, user }
+ *   server -> tool:               { type: "invoke", id, tool, params }
+ *   tool -> server:               { type: "result", id, ok: true,  data }
+ *                                  { type: "result", id, ok: false, error: { code, message } }
+ *   tool -> server (unsolicited): { type: "event", name, data }
+ * Unknown `type` values are logged and ignored.
+ */
+
+import type { IncomingMessage } from "node:http";
+import type { Duplex } from "node:stream";
+import { WebSocket, WebSocketServer } from "ws";
+
+/**
+ * The subset of the `ws` `WebSocket` interface the bridge relies on. A real
+ * `ws.WebSocket` satisfies this structurally; unit tests pass a plain mock
+ * object instead of standing up a real socket/server.
+ */
+interface MinimalSocket {
+  readyState: number;
+  on(event: "message", listener: (data: { toString(): string }) => void): void;
+  on(event: "close", listener: () => void): void;
+  on(event: "error", listener: (error: unknown) => void): void;
+  removeAllListeners(): void;
+  close(): void;
+  send(data: string): void;
+}
+
+type HelloInfo = {
+  protocol: number;
+  fileKey?: string;
+  fileName?: string;
+  page?: string;
+  user?: string;
+};
+
+type PendingRequest = {
+  resolve: (data: unknown) => void;
+  reject: (error: Error) => void;
+  timer: ReturnType<typeof setTimeout>;
+};
+
+type ConnectionChangeCallback = (connected: boolean) => void;
+type EventCallback = (name: string, data: unknown) => void;
+
+type ResultMessage = {
+  type: "result";
+  id: number;
+  ok: boolean;
+  data?: unknown;
+  error?: { code?: string; message?: string };
+};
+
+type HelloMessage = {
+  type: "hello";
+  protocol?: number;
+  fileKey?: string;
+  fileName?: string;
+  page?: string;
+  user?: string;
+};
+
+type EventMessage = {
+  type: "event";
+  name: string;
+  data?: unknown;
+};
+
+function createDeviceBridge(name: string) {
+  const wss = new WebSocketServer({ noServer: true });
+
+  let socket: MinimalSocket | undefined;
+  let helloInfo: HelloInfo | undefined;
+  let nextId = 1;
+  const pending = new Map<number, PendingRequest>();
+
+  const connectionChangeCallbacks = new Set<ConnectionChangeCallback>();
+  const eventCallbacks = new Set<EventCallback>();
+
+  function log(message: string) {
+    console.log(`[designbook] ${new Date().toISOString()} [${name}] ${message}`);
+  }
+
+  function notifyConnectionChange(connected: boolean) {
+    for (const cb of connectionChangeCallbacks) cb(connected);
+  }
+
+  function rejectAllPending(reason: string) {
+    for (const [, request] of pending) {
+      clearTimeout(request.timer);
+      request.reject(new Error(reason));
+    }
+    pending.clear();
+  }
+
+  function detachSocket() {
+    if (!socket) return;
+    socket.removeAllListeners();
+    socket = undefined;
+    helloInfo = undefined;
+    rejectAllPending(`${name} device disconnected.`);
+    notifyConnectionChange(false);
+  }
+
+  function handleMessage(raw: string) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      log(`received malformed JSON, ignoring: ${raw.slice(0, 200)}`);
+      return;
+    }
+
+    const envelope = parsed as { type?: unknown };
+    if (!envelope || typeof envelope.type !== "string") {
+      log(`received message with no type, ignoring`);
+      return;
+    }
+
+    switch (envelope.type) {
+      case "hello": {
+        const hello = parsed as HelloMessage;
+        helloInfo = {
+          protocol: typeof hello.protocol === "number" ? hello.protocol : 1,
+          fileKey: hello.fileKey,
+          fileName: hello.fileName,
+          page: hello.page,
+          user: hello.user,
+        };
+        log(
+          `hello received (file: ${helloInfo.fileName ?? "unknown"}, page: ${helloInfo.page ?? "unknown"})`,
+        );
+        notifyConnectionChange(true);
+        return;
+      }
+      case "result": {
+        const result = parsed as ResultMessage;
+        const request = pending.get(result.id);
+        if (!request) {
+          log(`received result for unknown id ${result.id}, ignoring`);
+          return;
+        }
+        pending.delete(result.id);
+        clearTimeout(request.timer);
+        if (result.ok) {
+          request.resolve(result.data);
+        } else {
+          request.reject(
+            new Error(result.error?.message ?? `${name} device reported an error.`),
+          );
+        }
+        return;
+      }
+      case "event": {
+        const event = parsed as EventMessage;
+        for (const cb of eventCallbacks) cb(event.name, event.data);
+        return;
+      }
+      default:
+        log(`received unknown message type "${envelope.type}", ignoring`);
+    }
+  }
+
+  /** Wires a new client socket, replacing any previous connection. */
+  function attachSocket(newSocket: MinimalSocket) {
+    if (socket && socket !== newSocket) {
+      log("new device connection replacing previous one");
+      socket.removeAllListeners();
+      socket.close();
+      rejectAllPending(`Replaced by a new ${name} device connection.`);
+    }
+
+    socket = newSocket;
+    helloInfo = undefined;
+
+    newSocket.on("message", (data) => {
+      handleMessage(data.toString());
+    });
+
+    newSocket.on("close", () => {
+      if (socket === newSocket) {
+        log("device disconnected");
+        detachSocket();
+      }
+    });
+
+    newSocket.on("error", (error) => {
+      log(`socket error: ${error instanceof Error ? error.message : String(error)}`);
+    });
+  }
+
+  /** Called from the http server's `upgrade` event for `/api/bridge/<name>` (or a legacy alias). */
+  function handleUpgrade(
+    request: IncomingMessage,
+    socketStream: Duplex,
+    head: Buffer,
+  ) {
+    wss.handleUpgrade(request, socketStream, head, (ws) => {
+      log("device connected");
+      attachSocket(ws);
+    });
+  }
+
+  function isConnected(): boolean {
+    return socket !== undefined && socket.readyState === WebSocket.OPEN;
+  }
+
+  function getInfo(): HelloInfo | undefined {
+    return helloInfo;
+  }
+
+  function onConnectionChange(cb: ConnectionChangeCallback): () => void {
+    connectionChangeCallbacks.add(cb);
+    return () => connectionChangeCallbacks.delete(cb);
+  }
+
+  function onEvent(cb: EventCallback): () => void {
+    eventCallbacks.add(cb);
+    return () => eventCallbacks.delete(cb);
+  }
+
+  function invoke(
+    tool: string,
+    params: unknown,
+    timeoutMs = 15_000,
+  ): Promise<unknown> {
+    if (!isConnected() || !socket) {
+      return Promise.reject(
+        new Error(`No ${name} device connected. Is its plugin/app running?`),
+      );
+    }
+
+    const id = nextId++;
+    const activeSocket = socket;
+
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        pending.delete(id);
+        reject(new Error(`${name} device did not respond within ${timeoutMs}ms.`));
+      }, timeoutMs);
+
+      pending.set(id, { resolve, reject, timer });
+
+      try {
+        activeSocket.send(JSON.stringify({ type: "invoke", id, tool, params }));
+      } catch (error) {
+        pending.delete(id);
+        clearTimeout(timer);
+        reject(error instanceof Error ? error : new Error(String(error)));
+      }
+    });
+  }
+
+  return {
+    handleUpgrade,
+    invoke,
+    isConnected,
+    getInfo,
+    onConnectionChange,
+    onEvent,
+    /**
+     * Wires a client socket directly, bypassing the HTTP upgrade dance.
+     * Exposed mainly so unit tests can drive the bridge with a mock socket
+     * (no real `ws` server / no external tool required).
+     */
+    attachSocket,
+  };
+}
+
+type CreatedDeviceBridge = ReturnType<typeof createDeviceBridge>;
+
+export { createDeviceBridge };
+export type { CreatedDeviceBridge };

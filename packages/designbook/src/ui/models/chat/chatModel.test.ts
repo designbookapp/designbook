@@ -11,6 +11,7 @@ import {
   buildPromptWithCanvasContext,
   createChatModel,
   emptyThreadMarker,
+  formatSelectionMarkerSummary,
   getModelValue,
   getToolMarker,
   parseModelValue,
@@ -109,5 +110,71 @@ describe("buildPromptWithCanvasContext", () => {
 
   it("returns the message unchanged with no selection", () => {
     expect(buildPromptWithCanvasContext("hi", undefined)).toBe("hi");
+  });
+
+  it("states BOTH the usage site and the definition for a drilled selection", () => {
+    const node: CanvasNodeSelection = {
+      label: "Card",
+      description: "drilled instance",
+      path: "src/composite/Card.tsx",
+      exportName: "Card",
+      codeTarget: {
+        file: "src/composite/ProductCard.tsx",
+        ownerExportName: "ProductCard",
+        name: "Card",
+        kind: "component",
+      },
+    };
+    const prompt = buildPromptWithCanvasContext("restyle it", node);
+    expect(prompt).toContain(
+      "- Instance: <Card> used inside ProductCard at src/composite/ProductCard.tsx",
+    );
+    expect(prompt).toContain("- Component defined at: src/composite/Card.tsx");
+  });
+
+  it("collapsed marker summary frames a drilled instance at its usage site", () => {
+    // The one-line marker the user actually sees above the chat input: a drilled
+    // selection must read as the INSTANCE inside its owner, never the bare
+    // definition path (which looked like the component itself was selected).
+    const node: CanvasNodeSelection = {
+      label: "Card",
+      description: "drilled instance",
+      path: "examples/demo/src/composite/product/ProductCard.tsx",
+      exportName: "Card",
+      codeTarget: {
+        file: "examples/demo/src/composite/product/variants/Card.tsx",
+        ownerExportName: "ProductCard",
+        name: "Card",
+        kind: "component",
+      },
+    };
+    expect(formatSelectionMarkerSummary(node)).toBe(
+      "Instance <Card> in ProductCard — examples/demo/src/composite/product/variants/Card.tsx",
+    );
+    // The definition path is NOT the collapsed summary (it lives in the expand).
+    expect(formatSelectionMarkerSummary(node)).not.toBe(node.path);
+  });
+
+  it("collapsed marker summary keeps the definition path for a plain selection", () => {
+    const node: CanvasNodeSelection = {
+      label: "ProductCard",
+      description: "the card",
+      path: "examples/demo/src/composite/product/ProductCard.tsx",
+    };
+    expect(formatSelectionMarkerSummary(node)).toBe(node.path);
+  });
+
+  it("prefers the selection-context registry block over the legacy lines", () => {
+    const node: CanvasNodeSelection = {
+      label: "Card",
+      description: "the card",
+      path: "src/Card.tsx",
+    };
+    const block = "[core]\nComponent defined at src/Card.tsx\n[props]\nsize: \"lg\"";
+    const prompt = buildPromptWithCanvasContext("hi", node, block);
+    expect(prompt).toBe(
+      `Selected canvas node context:\n${block}\n\nUser request:\nhi`,
+    );
+    expect(prompt).not.toContain("- Label:");
   });
 });

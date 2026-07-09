@@ -1,5 +1,5 @@
 /**
- * The right-hand workbench panel: horizontal tabs (Chat / Props / Code) over a
+ * The right-hand workbench panel: horizontal tabs (Info / Chat / Code) over a
  * scrollable body, with a collapse toggle that shrinks the panel to a slim
  * rail, and a drag handle on the left (inner) edge for resizing. Pure chrome —
  * the active tab, collapse state, width, and panel content are owned by the
@@ -22,13 +22,13 @@ const copy = {
   code: "Code",
   collapse: "Collapse panel",
   expand: "Expand panel",
-  props: "Props",
+  info: "Info",
   tabsLabel: "Selection panels",
 };
 
 const tabLabels: Record<RightPanelTab, string> = {
+  info: copy.info,
   chat: copy.chat,
-  props: copy.props,
   code: copy.code,
 };
 

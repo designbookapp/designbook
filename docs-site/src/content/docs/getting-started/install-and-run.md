@@ -60,9 +60,10 @@ The embedded Pi agent uses the Pi SDK's standard auth flow (`~/.pi/agent/auth.js
 environment variables). Two ways to connect a model — the canvas, code panel, and deep links all
 work without one, but the chat tab needs it:
 
-- **OAuth / subscription** — run `npx pi` in your project (the Pi CLI ships with designbook, no
-  separate install), then `/login`. Credentials are saved to `~/.pi/agent/auth.json`; click
-  **Retry connection** in the chat tab to pick them up without restarting.
+- **OAuth / subscription** — run `npx designbook login` in your project (the Pi CLI ships with
+  designbook, no separate install), then `/login`. Credentials are saved to `~/.pi/agent/auth.json`;
+  click **Retry connection** in the chat tab to pick them up without restarting. (`npx designbook pi
+  …` is the general escape hatch that passes through to the bundled Pi CLI.)
 - **API key** — set a provider key, e.g. `ANTHROPIC_API_KEY`, in the shell that runs
   `npm run design`.
 

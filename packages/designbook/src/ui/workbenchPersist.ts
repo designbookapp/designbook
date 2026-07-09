@@ -71,7 +71,8 @@ type PersistBlob = {
   // --- workbench-owned ---
   route: RouteSnapshot | null;
   activeTab: string | null;
-  /** Right-hand panel tab (chat / props / code) — see workbenchTabs.ts. */
+  /** Right-hand panel tab (info / chat / code) — see workbenchTabs.ts.
+   * Legacy "props" blobs migrate to "info" in resolveInitialTabs. */
   rightTab: string | null;
   /** Whether the right-hand panel is collapsed to its rail. */
   rightCollapsed: boolean | null;

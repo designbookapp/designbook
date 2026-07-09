@@ -31,6 +31,7 @@ import {
 } from "./hmrSuppress.ts";
 import { openBrowser } from "./openBrowser.ts";
 import { tailwindPlugins } from "../lib/tailwind.ts";
+import { variationsTailwindSourcePlugin } from "../lib/variationsTailwindSource.ts";
 import { buildTailwindBridge, tailwindBridgePlugins } from "../lib/tailwindBridge.ts";
 import {
   filterInheritedPlugins,
@@ -278,6 +279,11 @@ async function startDesignbook(options: DesignbookServerOptions) {
         // and must strip v3 `@tailwind` directives before @tailwindcss/vite's
         // own pre-transform sees the repo's css.
         ...bridgePlugins,
+        // Variations css coverage BEFORE tailwind: appends an @source for
+        // .designbook/variations to v4 entry css so variant-only utilities
+        // generate (design-variations spec).
+        // App-owned variations home (monorepo rule): <configDir>/.designbook.
+        variationsTailwindSourcePlugin(dirname(configPath)),
         ...tailwind,
         suppressHmrPlugin,
         // Inherited (deny-filtered, deduped) repo plugins — e.g. Lingui catalog
@@ -366,19 +372,19 @@ async function startDesignbook(options: DesignbookServerOptions) {
     vite.middlewares(request, response);
   });
 
-  // Figma plugin bridge: the plugin's UI iframe opens a WS connection to us
-  // (plugins can't listen on a socket). Only `/api/figma-bridge` upgrades;
-  // Vite's own HMR websocket is attached separately via `hmr.server` above
-  // and handles itself.
+  // Integration device bridges: an external tool (e.g. the Figma plugin's UI
+  // iframe) opens a WS connection to us — tools can't listen on a socket.
+  // Only `/api/bridge/<name>` (plus legacy aliases like `/api/figma-bridge`)
+  // upgrades, routed dynamically through the integration registry; Vite's own
+  // HMR websocket is attached separately via `hmr.server` above and handles
+  // itself.
   server.on("upgrade", (request, socket, head) => {
     const url = new URL(
       request.url ?? "/",
       `http://${request.headers.host ?? "localhost"}`,
     );
 
-    if (url.pathname === "/api/figma-bridge") {
-      api.handleFigmaUpgrade(request, socket, head);
-    }
+    api.handleBridgeUpgrade(url.pathname, request, socket, head);
   });
 
   // Friendly EADDRINUSE (no stack trace) — the outer CLI catch would otherwise

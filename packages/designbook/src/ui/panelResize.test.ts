@@ -29,6 +29,10 @@ describe("clampPanelWidth", () => {
   it("keeps the default inside the clamp range", () => {
     expect(clampPanelWidth(PANEL_DEFAULT_WIDTH)).toBe(PANEL_DEFAULT_WIDTH);
   });
+
+  it("defaults fresh sessions to 280px for both panels", () => {
+    expect(PANEL_DEFAULT_WIDTH).toBe(280);
+  });
 });
 
 describe("dragPanelWidth", () => {

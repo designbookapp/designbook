@@ -1,4 +1,10 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type FormEvent,
+} from "react";
 import { apiUrl } from "@designbook-ui/designbook";
 import {
   BotIcon,
@@ -79,8 +85,10 @@ import {
 } from "@designbook-ui/components/ui/toggle-group";
 import { cn } from "@designbook-ui/lib/utils";
 import {
+  buildCanvasContextBlock,
   buildPromptWithCanvasContext,
   emptyThreadMarker,
+  formatSelectionMarkerSummary,
   getModelValue,
   getToolMarker,
   messagesToThreadItems,
@@ -89,6 +97,11 @@ import {
   upsertMarker,
   upsertMessage,
 } from "@designbook-ui/models/chat/chatModel";
+import {
+  buildSelectionContextBlock,
+  getSelectionContextSnapshot,
+  subscribeSelectionContext,
+} from "@designbook-ui/models/selectionContext/store";
 import type { CanvasNodeSelection } from "@designbook-ui/types";
 import type {
   DesignMarker,
@@ -106,8 +119,8 @@ const CHAT_PROMPT_INPUT_ID = "design-agent-prompt";
 const copy = {
   abortCurrentResponse: "Abort current response",
   agentCwdLabel: "Agent cwd:",
-  appDescription: "A local React interface for Pi powered by the Pi SDK.",
-  appTitle: "Commerce Design Agent",
+  appDescription: "Describe the change. It lands as code in your repo.",
+  appTitle: "designbook agent",
   assistantAvatarFallback: "π",
   assistantSender: "Pi",
   emptyThread: "Start a conversation with the Pi coding agent.",
@@ -122,18 +135,20 @@ const copy = {
   noModelBody:
     "No model provider credential was found — the rest of the workbench works without one, but chat needs it. Either:",
   noModelLoginHint:
-    "then /login — OAuth or an API key, saved for next time, or",
+    "— OAuth or an API key, saved for next time, or",
   noModelEnvHint: "restart designbook with a provider key set, e.g.",
   noModelRetry: "Retry connection",
   selectedNodeContextLabel: "Selected node context",
-  selectedNodeHelp: "This path will be included with your next message.",
+  selectedNodeContextPending: "deriving…",
+  selectedNodeHelp: "This context will be included with your next message.",
+  selectedNodeHideContext: "Hide context",
+  selectedNodeShowContext: "Show full context",
   promptPlaceholder:
     "Ask Pi to inspect files, draft UI changes, or explain this workspace.",
   sendMessage: "Send message",
   sessionLabel: "Session",
   starting: "starting…",
   switchModelError: "Unable to switch model.",
-  sourcePathLabel: "Source path:",
   steerMode: "Steer",
   thinking: "Thinking…",
   userAvatarFallback: "ME",
@@ -261,8 +276,24 @@ function DesignChat({
   const setPrompt = onDraftChange ?? setInternalPrompt;
   const [queueMode, setQueueMode] = useState<"followUp" | "steer">("followUp");
   const [isBusy, setIsBusy] = useState(false);
+  // Selected-node marker expansion: shows the FULL assembled context the next
+  // send will include (informed confirm gate). Subscribed so async
+  // selection-context fragments patch into the preview as they resolve.
+  const [contextExpanded, setContextExpanded] = useState(false);
+  const contextSnapshot = useSyncExternalStore(
+    subscribeSelectionContext,
+    getSelectionContextSnapshot,
+    getSelectionContextSnapshot,
+  );
+  const assembledContext = selectedNode
+    ? buildCanvasContextBlock(selectedNode, buildSelectionContextBlock())
+    : undefined;
   const [connectionStatus, setConnectionStatus] = useState("Connecting");
   const streamingAssistantIdRef = useRef<string | undefined>(undefined);
+  // Branch-session scoping (per-branch-sessions spec): the thread is bound to
+  // the ACTIVE branch's session. `undefined` = primary (wire compat), matching
+  // the pre-registry behavior until the first `state` event arrives.
+  const sessionBranchRef = useRef<string | undefined>(undefined);
   const selectedModelValue = state?.model
     ? getModelValue(state.model)
     : undefined;
@@ -291,6 +322,7 @@ function DesignChat({
 
     eventSource.addEventListener("state", (messageEvent) => {
       const nextState = JSON.parse(messageEvent.data as string) as DesignState;
+      sessionBranchRef.current = nextState.branch;
       setState(nextState);
       setIsBusy(nextState.isStreaming);
       setThreadItems(messagesToThreadItems(nextState.messages));
@@ -299,6 +331,13 @@ function DesignChat({
 
     eventSource.addEventListener("pi-event", (messageEvent) => {
       const event = JSON.parse(messageEvent.data as string) as PiEvent;
+
+      // Drop events from OTHER branches' sessions: an inactive branch's
+      // streaming turn must not corrupt this thread. Those surface only as
+      // branch-switcher badges (see useWorktrees). Absent branch = primary.
+      if (event.branch !== sessionBranchRef.current) {
+        return;
+      }
 
       if (event.type === "agent_start") {
         setIsBusy(true);
@@ -478,9 +517,13 @@ function DesignChat({
     }
 
     setPrompt("");
+    // Send-time assembly: the selection-context registry's resolved prompt
+    // fragments (whatever has resolved by now) become the context block; the
+    // legacy per-field lines are only the empty-registry fallback.
     const messageWithContext = buildPromptWithCanvasContext(
       message,
       selectedNode,
+      buildSelectionContextBlock(),
     );
 
     const response = await fetch(apiUrl("/api/prompt"), {
@@ -677,12 +720,35 @@ function DesignChat({
                 <InfoIcon />
               </MarkerIcon>
               <MarkerContent className="grid gap-1">
-                <span className="font-medium">
+                <span className="flex items-center gap-2 font-medium">
                   {copy.selectedNodeContextLabel}
+                  {contextSnapshot.pending > 0 ? (
+                    <span className="text-xs font-normal text-muted-foreground">
+                      {copy.selectedNodeContextPending}
+                    </span>
+                  ) : null}
+                  <button
+                    type="button"
+                    className="ml-auto text-xs font-normal underline underline-offset-2 hover:no-underline"
+                    onClick={() => setContextExpanded((current) => !current)}
+                  >
+                    {contextExpanded
+                      ? copy.selectedNodeHideContext
+                      : copy.selectedNodeShowContext}
+                  </button>
                 </span>
-                <span className="truncate font-mono text-xs">
-                  {copy.sourcePathLabel} {selectedNode.path}
-                </span>
+                {contextExpanded ? (
+                  <pre className="max-h-48 overflow-auto rounded bg-muted/50 p-2 font-mono text-xs whitespace-pre-wrap">
+                    {assembledContext}
+                  </pre>
+                ) : (
+                  <span
+                    className="truncate font-mono text-xs"
+                    title={formatSelectionMarkerSummary(selectedNode)}
+                  >
+                    {formatSelectionMarkerSummary(selectedNode)}
+                  </span>
+                )}
                 <span className="text-xs">{copy.selectedNodeHelp}</span>
               </MarkerContent>
             </Marker>
@@ -698,7 +764,7 @@ function DesignChat({
               <ul className="grid list-disc gap-1 pl-5 text-muted-foreground">
                 <li>
                   <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
-                    npx pi
+                    npx designbook login
                   </code>{" "}
                   {copy.noModelLoginHint}
                 </li>
@@ -808,6 +874,7 @@ function DesignChat({
             {state?.sessionId ? (
               <Badge variant="outline">
                 {copy.sessionLabel} {state.sessionId.slice(0, 8)}
+                {state.branchName ? ` · ${state.branchName}` : null}
               </Badge>
             ) : null}
           </div>

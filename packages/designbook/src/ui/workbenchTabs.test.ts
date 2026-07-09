@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   RIGHT_PANEL_TABS,
   isRightPanelTab,
+  migrateRightTab,
   resolveInitialTabs,
 } from "./workbenchTabs";
 
@@ -11,8 +12,23 @@ describe("isRightPanelTab", () => {
     expect(isRightPanelTab("files")).toBe(false);
     expect(isRightPanelTab("figma")).toBe(false);
     expect(isRightPanelTab("theme:tokens")).toBe(false);
+    expect(isRightPanelTab("props")).toBe(false); // renamed to "info"
     expect(isRightPanelTab(null)).toBe(false);
     expect(isRightPanelTab(42)).toBe(false);
+  });
+
+  it("orders the tabs info-first", () => {
+    expect(RIGHT_PANEL_TABS).toEqual(["chat", "info", "code"]);
+  });
+});
+
+describe("migrateRightTab", () => {
+  it("passes current ids through and maps the legacy props id", () => {
+    expect(migrateRightTab("info")).toBe("info");
+    expect(migrateRightTab("chat")).toBe("chat");
+    expect(migrateRightTab("props")).toBe("info");
+    expect(migrateRightTab("bogus")).toBeUndefined();
+    expect(migrateRightTab(null)).toBeUndefined();
   });
 });
 
@@ -32,9 +48,16 @@ describe("resolveInitialTabs", () => {
   });
 
   it("passes adapter tab ids through on the left", () => {
-    expect(resolveInitialTabs("theme:tokens", "props")).toEqual({
+    expect(resolveInitialTabs("theme:tokens", "info")).toEqual({
       left: "theme:tokens",
-      right: "props",
+      right: "info",
+    });
+  });
+
+  it("migrates a persisted rightTab of props to info (rename)", () => {
+    expect(resolveInitialTabs("files", "props")).toEqual({
+      left: "files",
+      right: "info",
     });
   });
 
@@ -50,9 +73,9 @@ describe("resolveInitialTabs", () => {
   });
 
   it("prefers an explicit rightTab over a migrated activeTab", () => {
-    expect(resolveInitialTabs("code", "props")).toEqual({
+    expect(resolveInitialTabs("code", "info")).toEqual({
       left: "files",
-      right: "props",
+      right: "info",
     });
   });
 

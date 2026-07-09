@@ -9,14 +9,19 @@ import {
 import { startDesignbook } from "../node/sidecar/server.ts";
 import { runDev } from "./dev.ts";
 import { runInit } from "./init.ts";
+import { runLogin, runPi } from "./pi.ts";
 
-const HELP = `designbook — design workbench for React repos
+const HELP = `designbook — your React app, every angle, editable
 
 Usage:
   designbook init [options]          Scaffold injected-mode files into a Vite
                                      app (see \`designbook init -h\`)
   designbook dev [config] [options]  Sidecar + proxy front (injects into your
                                      app's dev server; see \`designbook dev -h\`)
+  designbook login                   Connect a model for the chat tab (runs the
+                                     bundled Pi CLI's /login flow)
+  designbook pi [args…]              Run the bundled Pi coding-agent CLI directly
+                                     (passthrough; escape hatch)
   designbook [config] [options]      Host mode (embedded workbench dev server)
 
 Arguments:
@@ -53,6 +58,16 @@ if (process.argv[2] === "dev") {
   });
 } else if (process.argv[2] === "init") {
   runInit(process.argv.slice(3)).catch((error: unknown) => {
+    console.error(error);
+    process.exit(1);
+  });
+} else if (process.argv[2] === "login") {
+  runLogin(process.argv.slice(3)).catch((error: unknown) => {
+    console.error(error);
+    process.exit(1);
+  });
+} else if (process.argv[2] === "pi") {
+  runPi(process.argv.slice(3)).catch((error: unknown) => {
     console.error(error);
     process.exit(1);
   });

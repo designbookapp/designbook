@@ -4,11 +4,15 @@ import {
   classifyProxyPath,
   deepLinkBootstrapHtml,
   escapeHtml,
+  MAX_WARM_TARGET_SERVERS,
   parseTargetPort,
   recoveryPageHtml,
   RESTART_BACKOFF_MS,
   restartDelayMs,
+  selectTargetEvictions,
+  spawnImmediatelyOnRetarget,
   stripDesignbookNamespace,
+  worktreeTargetCwd,
 } from "./sidecarSupport.ts";
 
 describe("parseTargetPort", () => {
@@ -155,5 +159,110 @@ describe("deepLinkBootstrapHtml", () => {
     expect(html).toContain("\\u003c/script");
     // Exactly one real </script> (the closing tag of the bootstrap script).
     expect(html.match(/<\/script>/g)?.length).toBe(1);
+  });
+});
+
+describe("worktreeTargetCwd (branch-switch retarget dir)", () => {
+  it("maps a monorepo app package into the worktree", () => {
+    expect(
+      worktreeTargetCwd("/repo", "/repo/examples/demo", "/wt/feature-x"),
+    ).toBe("/wt/feature-x/examples/demo");
+  });
+
+  it("uses the worktree root when the target cwd IS the repo root", () => {
+    expect(worktreeTargetCwd("/repo", "/repo", "/wt/feature-x")).toBe(
+      "/wt/feature-x",
+    );
+  });
+
+  it("switching back to the primary checkout maps to the original cwd", () => {
+    // prepareWorktree resolves the primary branch to the projectRoot checkout
+    // itself, so the mapping must be the identity.
+    expect(worktreeTargetCwd("/repo", "/repo/examples/demo", "/repo")).toBe(
+      "/repo/examples/demo",
+    );
+  });
+
+  it("leaves a target cwd outside the repo untouched", () => {
+    expect(worktreeTargetCwd("/repo", "/elsewhere/app", "/wt/feature-x")).toBe(
+      "/elsewhere/app",
+    );
+  });
+});
+
+describe("selectTargetEvictions (warm dev-server LRU, per-branch-sessions)", () => {
+  const entry = (key: string, lastUsedAt: number) => ({ key, lastUsedAt });
+
+  it("keeps everything under the cap", () => {
+    expect(
+      selectTargetEvictions(
+        [entry("a", 1), entry("b", 2), entry("c", 3)],
+        "c",
+        MAX_WARM_TARGET_SERVERS,
+      ),
+    ).toEqual([]);
+  });
+
+  it("evicts the least-recently-viewed beyond the cap", () => {
+    expect(
+      selectTargetEvictions(
+        [entry("a", 1), entry("b", 2), entry("c", 3), entry("d", 4)],
+        "d",
+        3,
+      ),
+    ).toEqual(["a"]);
+  });
+
+  it("never evicts the currently-viewed entry, even when it is the LRU", () => {
+    expect(
+      selectTargetEvictions(
+        [entry("active", 1), entry("b", 2), entry("c", 3), entry("d", 4)],
+        "active",
+        3,
+      ),
+    ).toEqual(["b"]);
+  });
+
+  it("evicts in LRU order when multiple must go", () => {
+    expect(
+      selectTargetEvictions(
+        [entry("a", 3), entry("b", 1), entry("c", 2), entry("d", 4)],
+        "d",
+        2,
+      ),
+    ).toEqual(["b", "c"]);
+  });
+
+  it("forced --target-port degrades to a single server (cap 1)", () => {
+    expect(
+      selectTargetEvictions([entry("old", 1), entry("new", 2)], "new", 1),
+    ).toEqual(["old"]);
+  });
+
+  it("clamps a nonsensical cap to at least the active server", () => {
+    expect(
+      selectTargetEvictions([entry("a", 1), entry("b", 2)], "b", 0),
+    ).toEqual(["a"]);
+  });
+
+  it("documents the cap constant", () => {
+    expect(MAX_WARM_TARGET_SERVERS).toBe(3);
+  });
+});
+
+describe("spawnImmediatelyOnRetarget (forced-port stop-then-spawn ordering)", () => {
+  it("forced port + an eviction: the spawn must WAIT for the evictee's exit", () => {
+    // The evicted server still owns the one shared port; spawning now would
+    // make a --strictPort dev server exit instantly.
+    expect(spawnImmediatelyOnRetarget(true, 1)).toBe(false);
+  });
+
+  it("forced port with nothing evicted (first target): spawn now", () => {
+    expect(spawnImmediatelyOnRetarget(true, 0)).toBe(true);
+  });
+
+  it("auto-port mode always spawns immediately (each server has its own port)", () => {
+    expect(spawnImmediatelyOnRetarget(false, 0)).toBe(true);
+    expect(spawnImmediatelyOnRetarget(false, 1)).toBe(true);
   });
 });

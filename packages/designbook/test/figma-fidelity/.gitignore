@@ -1,0 +1,3 @@
+# Run artifacts (decision 3): only expected.html snapshots are committed;
+# per-run browser/figma/diff PNGs, pulled.html and reports are not.
+results/

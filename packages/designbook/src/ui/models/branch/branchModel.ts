@@ -18,7 +18,7 @@
  * "preparing".
  */
 
-import type { WorktreeSummary } from "./useWorktrees";
+import type { BranchAgentStatus, WorktreeSummary } from "./useWorktrees";
 
 /** The branch/worktree state slice (live from `useWorktrees`, or a fixture). */
 type BranchData = {
@@ -31,6 +31,9 @@ type BranchData = {
   switching: boolean;
   /** Last switch/load error, shown inline with a retry affordance. */
   error?: string;
+  /** Per-branch agent activity (branch name → working/done) — the switcher
+   * badges for INACTIVE branches' sessions (per-branch-sessions spec). */
+  agentStatuses?: Record<string, BranchAgentStatus>;
 };
 
 /** Prepare + navigate to a branch's instance. Injected already bound to the
@@ -39,6 +42,8 @@ type BranchSwitch = (branch: string) => void;
 
 /** The branch model surface exposed on context and returned by the factory. */
 type BranchModel = BranchData & {
+  /** Always-present badge map (empty when no agent activity). */
+  agentStatuses: Record<string, BranchAgentStatus>;
   /** Switch to a branch (bound to the current route). No-op in fixture mode. */
   switchBranch: BranchSwitch;
   /** Retry the last failed switch. No-op in fixture mode. */
@@ -79,6 +84,7 @@ function createBranchModel(options: CreateBranchModelOptions = {}): BranchModel 
   const data = options.data ?? EMPTY_DATA;
   return {
     ...data,
+    agentStatuses: data.agentStatuses ?? {},
     switchBranch: options.switchBranch ?? noop,
     retry: options.retry ?? noop,
     showSelector:
@@ -88,6 +94,7 @@ function createBranchModel(options: CreateBranchModelOptions = {}): BranchModel 
 
 export { createBranchModel };
 export type {
+  BranchAgentStatus,
   BranchData,
   BranchModel,
   BranchSwitch,

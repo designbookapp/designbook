@@ -17,6 +17,8 @@ export default defineConfig({
   },
   test: {
     environment: "node",
-    include: ["src/**/*.test.ts"],
+    // src holds the product suite; test/ holds the figma-fidelity harness's
+    // pure-logic unit tests (its runner is a plain node script, not vitest).
+    include: ["src/**/*.test.ts", "test/**/*.test.ts"],
   },
 });

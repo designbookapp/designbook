@@ -26,9 +26,21 @@ type BranchFixture = {
 };
 
 const WORKTREES: WorktreeSummary[] = [
-  { branch: "main", path: "/repo", port: 8840, running: true },
-  { branch: "design/hero", path: "/repo/.wt/hero", port: 8841, running: true },
-  { branch: "design/pricing", path: "/repo/.wt/pricing", port: 0, running: false },
+  { branch: "main", path: "/repo", port: 8840, running: true, dirtyCount: 0 },
+  {
+    branch: "design/hero",
+    path: "/repo/.designbook/worktrees/hero",
+    port: 8841,
+    running: true,
+    dirtyCount: 3,
+  },
+  {
+    branch: "design/pricing",
+    path: "/repo/.designbook/worktrees/pricing",
+    port: 0,
+    running: false,
+    dirtyCount: 0,
+  },
 ];
 
 function createBranchFixture(): BranchFixture {

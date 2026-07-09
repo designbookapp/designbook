@@ -1,9 +1,9 @@
 ---
 title: Designbook
-description: A design workbench for React repos — a live component canvas plus an embedded coding agent that turns design edits into real code.
+description: Designbook opens your running React app as one structure with a live view per discipline — tokens, copy, flags, code — plus an embedded coding agent that lands every edit as real code.
 template: splash
 hero:
-  tagline: Design your product, not pictures of it.
+  tagline: One product. Every angle.
   actions:
     - text: Get started
       link: /getting-started/what-is-designbook/
@@ -16,12 +16,13 @@ hero:
 
 import { Card, CardGrid } from '@astrojs/starlight/components';
 
-Designbook is a Storybook-like workbench that runs against **your real React code**.
-It **injects into your app's own Vite dev server**: a `◈ designbook` toolbar pill opens
-tools right on your running app, or expands into a full-screen canvas, and your components
-render through your app's own bundler, styling, and providers. Designers edit theme tokens,
-copy, and feature flags directly — with an embedded coding agent that applies those
-edits as real changes to your source files.
+Designbook **injects into your app's own Vite dev server** and opens the running app as a
+set of live, editable views — one per discipline, all derived from the same code. Designers
+edit theme tokens, writers edit every string in every locale, product flips per-tenant
+flags, engineers see the source. A `◈ designbook` toolbar pill opens tools right on your
+running app, or expands into a full-screen canvas where your components render through your
+app's own bundler, styling, and providers — and an embedded coding agent applies bigger
+changes as real edits to your source files.
 
 <CardGrid>
   <Card title="Real components, real code" icon="seti:react">

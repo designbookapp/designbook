@@ -162,29 +162,78 @@ function domTagSummary(dom: NonNullable<CanvasNodeSelection["dom"]>): string {
   return `<${dom.tag}${id}${classes}>`;
 }
 
-/** Prepend the selected canvas node's context to the user's message (if any). */
-function buildPromptWithCanvasContext(
-  message: string,
+/**
+ * The context section for the outgoing prompt. When the selection-context
+ * registry resolved prompt fragments (PREVIEW — docs/specs/
+ * selection-context.md), the assembled `contextBlock` IS the context; the
+ * per-field lines remain as the fallback when nothing has resolved. The
+ * fallback states BOTH the usage site and the definition for a drilled
+ * selection (`codeTarget`) — the model must never see only the owner file.
+ */
+function buildCanvasContextBlock(
   selectedNode: CanvasNodeSelection | undefined,
-): string {
-  if (!selectedNode) {
-    return message;
-  }
+  contextBlock?: string,
+): string | undefined {
+  if (!selectedNode) return undefined;
+  if (contextBlock) return contextBlock;
   const lines = [
-    "Selected canvas node context:",
     `- Label: ${selectedNode.label}`,
     `- Description: ${selectedNode.description}`,
   ];
   if (selectedNode.dom) {
     lines.push(`- DOM element: ${domTagSummary(selectedNode.dom)}`);
   }
-  lines.push(
-    `- Source path: ${selectedNode.path}`,
+  if (selectedNode.codeTarget) {
+    const target = selectedNode.codeTarget;
+    lines.push(
+      `- Instance: <${target.name}> used inside ${target.ownerExportName} at ${target.file}`,
+      `- Component defined at: ${selectedNode.path}`,
+    );
+  } else {
+    lines.push(`- Source path: ${selectedNode.path}`);
+  }
+  return lines.join("\n");
+}
+
+/**
+ * Prepend the selected canvas node's context to the user's message (if any).
+ * `contextBlock` is the selection-context registry's assembled block (see
+ * buildSelectionContextBlock) captured at send time.
+ */
+function buildPromptWithCanvasContext(
+  message: string,
+  selectedNode: CanvasNodeSelection | undefined,
+  contextBlock?: string,
+): string {
+  const block = buildCanvasContextBlock(selectedNode, contextBlock);
+  if (!block) {
+    return message;
+  }
+  return [
+    "Selected canvas node context:",
+    block,
     "",
     "User request:",
     message,
-  );
-  return lines.join("\n");
+  ].join("\n");
+}
+
+/**
+ * The collapsed one-line summary above the chat input's "Selected node context"
+ * marker. For a DRILLED selection it frames the INSTANCE at its usage site
+ * (`<Name> in Owner — owner file`) so the visible marker matches what the model
+ * is told — never the bare definition path, which read as if the component
+ * itself were selected. The definition path still shows in the expanded view
+ * (buildCanvasContextBlock). Plain selections keep the definition path.
+ */
+function formatSelectionMarkerSummary(
+  selectedNode: CanvasNodeSelection,
+): string {
+  const target = selectedNode.codeTarget;
+  if (target) {
+    return `Instance <${target.name}> in ${target.ownerExportName} — ${target.file}`;
+  }
+  return selectedNode.path;
 }
 
 // ---------------------------------------------------------------------------
@@ -259,9 +308,11 @@ function createChatModel(options: CreateChatModelOptions = {}): ChatModel {
 }
 
 export {
+  buildCanvasContextBlock,
   buildPromptWithCanvasContext,
   createChatModel,
   emptyThreadMarker,
+  formatSelectionMarkerSummary,
   getLiveMessageId,
   getModelValue,
   getToolMarker,

@@ -1,15 +1,31 @@
 /**
- * Copies the shipped Agent Skills (skills/) into dist/skills so a build
- * output is self-contained. The npm package ALSO ships skills/ directly (see
- * package.json "files"); runtime resolution tries skills/ first, then
- * dist/skills (src/node/api/piSkills.ts `packagedSkillsDir`).
+ * Copies each integration plugin's packaged Agent Skills into dist so a build
+ * output is self-contained (the node halves resolve `../skills` next to their
+ * COMPILED module — see src/plugins/figma/node `figmaSkillsDir`). The npm
+ * package ALSO ships the source tree (`src/plugins` in package.json "files"),
+ * which is the resolution hit when running from source.
  */
-import { cpSync, rmSync } from "node:fs";
+import { cpSync, existsSync, rmSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const target = resolve(root, "dist", "skills");
-rmSync(target, { recursive: true, force: true });
-cpSync(resolve(root, "skills"), target, { recursive: true });
-console.log(`copied skills/ -> dist/skills`);
+
+const skillDirs = [
+  ["src/plugins/figma/skills", "dist/plugins/figma/skills"],
+  // Core (non-integration) skills — currently `variations`; resolved by
+  // designbookCoreSkillsDir in src/node/api/piSkills.ts.
+  ["src/skills", "dist/skills"],
+];
+
+for (const [from, to] of skillDirs) {
+  const source = resolve(root, from);
+  const target = resolve(root, to);
+  if (!existsSync(source)) {
+    console.error(`copy-skills: missing ${from}`);
+    process.exit(1);
+  }
+  rmSync(target, { recursive: true, force: true });
+  cpSync(source, target, { recursive: true });
+  console.log(`copied ${from} -> ${to}`);
+}

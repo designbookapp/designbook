@@ -36,7 +36,10 @@ describe("no-model setup callout", () => {
   });
 
   it("callout offers both recovery paths and a retry", () => {
-    expect(designChat).toContain("npx pi");
+    // Login goes through designbook's own bin (resolves the bundled Pi CLI),
+    // NOT bare `npx pi` — that runs an unrelated registry package under pnpm.
+    expect(designChat).toContain("npx designbook login");
+    expect(designChat).not.toMatch(/npx pi\b/);
     expect(designChat).toContain("ANTHROPIC_API_KEY");
     // Retry = new session (server re-reads auth) + refreshed model list.
     const retry = designChat.match(
@@ -48,10 +51,12 @@ describe("no-model setup callout", () => {
   });
 
   it("server re-reads auth.json on every session build (makes retry work)", () => {
+    // Per-branch registry: the factory is createSessionFor (one per branch),
+    // and the reload must stay INSIDE it so every session build re-reads auth.
     const createSession = api.match(
-      /async function createSession\(\)[\s\S]*?\n {2}\}/,
+      /async function createSessionFor\([\s\S]*?return \{ session/,
     )?.[0];
-    expect(createSession, "api.ts must define createSession").toBeTruthy();
+    expect(createSession, "api.ts must define createSessionFor").toBeTruthy();
     expect(createSession).toContain("authStorage.reload()");
   });
 });

@@ -16,6 +16,7 @@
 
 import { renderNodes, type RenderNodesParams } from "./render.ts";
 import { readHtml, type ReadHtmlParams } from "./readHtml.ts";
+import { exportPng, type ExportPngParams } from "./export.ts";
 
 figma.showUI(__html__, { width: 320, height: 140 });
 
@@ -298,6 +299,8 @@ async function runTool(tool: string, params: unknown): Promise<unknown> {
       return renderNodes(params as RenderNodesParams);
     case "figma_read_html":
       return readHtml(params as ReadHtmlParams);
+    case "figma_export_png":
+      return exportPng(params as ExportPngParams);
     default:
       throw new Error(`Unknown tool: ${tool}`);
   }

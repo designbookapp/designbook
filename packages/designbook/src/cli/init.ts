@@ -144,6 +144,17 @@ function detectIndent(raw: string): string {
   return m ? m[1] : "  ";
 }
 
+/** Whether a `.gitignore` body already lists `pattern` (exact line, skipping
+ * comments/blanks, trailing slash ignored) — so scaffolding stays idempotent. */
+function gitignoreListsPattern(content: string, pattern: string): boolean {
+  const needle = pattern.replace(/\/+$/, "");
+  return content.split("\n").some((line) => {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) return false;
+    return trimmed.replace(/\/+$/, "") === needle;
+  });
+}
+
 /**
  * Merge scripts into a parsed package.json object (mutates a shallow copy).
  * Returns the new object plus which keys were added/skipped/conflicting.
@@ -443,6 +454,26 @@ async function runInit(argv: string[]): Promise<void> {
     written.push(viteVariantName);
   }
 
+  // 3bb. .gitignore — keep the nested branch-worktrees dir (created on first
+  // branch switch) out of git status / the Changes tab. designbook also writes
+  // this to `.git/info/exclude` at runtime, but scaffolding it here makes the
+  // ignore visible + committable for the whole team.
+  const gitignoreRel = ".gitignore";
+  const gitignorePath = join(root, gitignoreRel);
+  const worktreesIgnore = ".designbook/worktrees/";
+  const existingIgnore = existsSync(gitignorePath)
+    ? readFileSync(gitignorePath, "utf8")
+    : "";
+  if (!gitignoreListsPattern(existingIgnore, worktreesIgnore)) {
+    const prefix =
+      existingIgnore.length && !existingIgnore.endsWith("\n") ? "\n" : "";
+    writeFileSync(
+      gitignorePath,
+      `${existingIgnore}${prefix}# designbook branch worktrees\n${worktreesIgnore}\n`,
+    );
+    written.push(gitignoreRel);
+  }
+
   // 3c. package.json scripts (preserve formatting).
   const run = pmRun(pm);
   const additions: Record<string, string> = {
@@ -528,6 +559,7 @@ export {
   globForDir,
   chooseComponentsDir,
   detectIndent,
+  gitignoreListsPattern,
   mergeScripts,
   renderConfigTemplate,
   renderViteVariant,

@@ -176,17 +176,25 @@ function rejectCrossOriginApiRequest(
 }
 
 /**
- * The Figma plugin's UI iframe runs from a `data:` URL, so every fetch it
- * makes carries `Origin: null` — inherently cross-origin by Figma's design.
- * Its discovery probe must bypass the same-origin gate: the handler answers
- * with public identity info only ({app, version, port}) and sets
- * `Access-Control-Allow-Origin: *` itself.
+ * The generic tool-discovery probe (`/api/hello`, E1) is the ONLY
+ * cross-origin-exempt designbook route: device plugins run from opaque
+ * origins (the Figma plugin's UI iframe is a `data:` URL, so every fetch it
+ * makes carries `Origin: null`), and the handler answers with public identity
+ * info only ({app, version, port}) and sets `Access-Control-Allow-Origin: *`
+ * itself. `/api/figma-hello` is the legacy alias the shipped Figma plugin
+ * probes. Integration plugins CANNOT declare additional exemptions.
  */
+const CROSS_ORIGIN_EXEMPT_API_PATHS = new Set([
+  "/api/hello",
+  "/api/figma-hello",
+]);
+
 function isCrossOriginExemptApiPath(pathname: string): boolean {
-  return pathname === "/api/figma-hello";
+  return CROSS_ORIGIN_EXEMPT_API_PATHS.has(pathname);
 }
 
 export {
+  CROSS_ORIGIN_EXEMPT_API_PATHS,
   isCrossOriginExemptApiPath,
   isNonLoopbackBindHost,
   isSameOriginApiRequest,

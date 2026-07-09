@@ -7,6 +7,94 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-07-09
+
+### Added
+
+- **Design-variations review polish** — compare-strip cells are now
+  self-contained column cards: labels truncate inside the cell header, the
+  preview area hard-contains hostile variant styling (`contain: layout paint`
+  + scroll — absolute/fixed roots and 1200px layouts cannot escape their
+  cell), action rows align across cells, and the row scrolls horizontally.
+  Collapsed renders (zero-height roots) are detected by measuring the mounted
+  preview root and flagged "rendered empty" with failed-cell prominence
+  (iterate/discard stay available); the variations skill + variant prompt now
+  require an intrinsic-height root. Variant-only Tailwind utilities generate
+  correctly (an `@source` for `.designbook/variations/` is appended to v4
+  entry css in host mode). The director call and every ephemeral variant
+  session now **inherit the chat's selected model** (SDK default only when
+  none is selected), and the Generate popover shows which model will run.
+
+- **Branch worktrees now live inside the repo** — new branch worktrees are
+  created under `.designbook/worktrees/<branch>` (like Claude Code's
+  `.claude/worktrees`) instead of a sibling `<repo>-worktrees/` dir. On first
+  creation designbook writes `.designbook/worktrees/` to the repo's
+  `.git/info/exclude` (idempotent; respected if already in `.gitignore`) so the
+  nested checkout never pollutes `git status` / the Changes tab — zero user
+  setup. `designbook init` also scaffolds the entry into `.gitignore`. Existing
+  sibling-dir worktrees keep working (everything lists via `git worktree list`);
+  no migration. A nested worktree's files are fenced off from the primary root's
+  read/write endpoints (containment guard) and from the primary Vite watcher
+  (HMR ignore), so editing inside a worktree can't fire the primary app's HMR.
+
+- **Uncommitted-change count on the branch switcher** — `GET /api/worktrees`
+  returns an additive `dirtyCount` per worktree (`git status --porcelain`,
+  capped at 99); the switcher shows a compact dot + count ("3", "99+") per
+  branch. Wire-compatible (optional field).
+
+- **`designbook login` / `designbook pi` CLI subcommands** — connect a model
+  for the chat tab without the broken `npx pi`. The bundled Pi CLI is resolved
+  from designbook's *own* dependency tree (via its package.json `bin`), not
+  `node_modules/.bin`, so it works under pnpm and yarn-pnp (which don't link a
+  transitive dep's bins, making `npx pi` run an unrelated registry package).
+  `designbook login` spawns it interactively with a `/login` hint; `designbook
+  pi [args…]` is a passthrough escape hatch. The no-model chat callout and docs
+  now say `npx designbook login`.
+
+- **Per-branch agent sessions + warm dev servers** (`designbook dev`) — the
+  proxy is purely a proxy: each branch worktree gets its own Pi session
+  (cwd-scoped, transcripts per branch) that keeps running in the background
+  across branch switches, so a turn started on branch A finishes while you
+  explore branch B. The chat binds to the viewed branch (session badge shows
+  the branch); inactive branches show "agent working"/"agent finished"
+  badges in the branch switcher. Dev servers spawn lazily on first view,
+  stay warm when switching away (instant switch-back), LRU-capped at 3
+  (forced `--target-port` caps at 1). SSE events gain an optional `branch`
+  field (absent = primary; wire compatible) plus a new `branch-status`
+  snapshot event. Removing a worktree disposes its session and stops its
+  dev server. Host mode unchanged. See docs/specs/per-branch-sessions.md.
+
+- **Info panel + selection-context registry (PREVIEW)** — the right-panel
+  Props tab is now **Info** (first tab; persisted "props" migrates): one
+  contributor registry renders the same derived selection context to the
+  panel and the chat prompt (core / props / render context / i18n incl.
+  hardcoded-string count / React context scope / figma status). Drilled
+  selections now send both the usage site AND the definition to the agent,
+  and the chat's selected-node marker expands to show the full context.
+  New `selectionContext` hook on `PluginUiSpec` and `AdapterSetup`.
+
+- **Integration-plugin seam (EXPERIMENTAL)** — the built-in Figma integration
+  now registers through a public plugin API (`@designbookapp/designbook/integration`):
+  same-origin-gated routes under `/api/x/<name>/…`, a core device bridge at
+  `/api/bridge/<name>`, Pi tools/skills, and a left-rail tab fed
+  `PluginScreenProps`. New generic `GET /api/hello` discovery route (the only
+  cross-origin-exempt path). Config key `integrations:` — built-ins are
+  default-ON, `integrations: { figma: false }` opts out,
+  `integrations: { figma: { tokens: { … } } }` carries the Figma token-sync
+  options.
+
+### Changed
+
+- **Sync to/from Figma moved to the Figma tab** — the theme adapter now
+  publishes a neutral token source; Figma naming/collection options moved to
+  `integrations.figma.tokens`. `themeAdapter({ figma: … })` still works but
+  logs a deprecation warning and forwards.
+- Shipped Figma surfaces keep working via aliases: `/api/figma-hello`,
+  `/api/figma-bridge`, and `/api/figma/*` all alias their canonical forms.
+- The figma-specific pure mappers (`figmaTokens`, `figmaRender`, …) are no
+  longer exported from `@designbookapp/designbook/config` (they were
+  undocumented internals; they now live inside the figma plugin).
+
 ## [0.3.1] - 2026-07-08
 
 ### Added
@@ -18,6 +106,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   after launch needs no restart.
 
 ### Fixed
+
+- **Chat "Selected node context" marker mis-described drilled instances** — for
+  a drilled selection the collapsed one-line marker above the chat input showed
+  the bare component definition path, reading as if the component itself were
+  selected rather than the instance inside its parent. It now frames the usage
+  site (`Instance <Card> in ProductCard — …/variants/Card.tsx`); the definition
+  path stays in the expanded assembled-context view. (The prompt half was
+  already fixed — the core selection-context fragment sends both usage site and
+  definition.)
 
 - **Canvas selection under `display:contents` wrappers** — components whose
   first host DOM node is boxless (e.g. a flag-scope wrapper rendering

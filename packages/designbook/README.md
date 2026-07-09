@@ -1,6 +1,6 @@
 # designbook
 
-Design workbench for React repos — a live canvas of your real components plus a Pi coding agent, aimed at designers. designbook **injects into your app's own Vite dev server**.
+**One product. Every angle.** Your React app as a set of live, editable views — theme tokens, copy in every locale, feature flags, code — plus an embedded Pi coding agent that lands every edit as a real change in the repo. designbook **injects into your app's own Vite dev server**.
 
 ```bash
 npm i -D @designbookapp/designbook

@@ -18,6 +18,7 @@
     "ui.ts",
     "render.ts",
     "readHtml.ts",
+    "export.ts",
     "../src/config/figmaRender.ts",
     "../src/config/figmaReadCss.ts",
     "../src/config/figmaHtml.ts",

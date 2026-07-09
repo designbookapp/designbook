@@ -221,13 +221,29 @@ function mountWorkbench(options: MountWorkbenchOptions): WorkbenchHandle {
   void (async () => {
     // Dynamic imports: these module graphs read the config store at evaluation
     // time, so they must not evaluate until initConfigStore has run above.
-    const [{ WorkbenchRoot }, { loadAdapterRuntime }] = await Promise.all([
+    const [
+      { WorkbenchRoot },
+      { loadAdapterRuntime },
+      { initUiIntegrations },
+      { registerBuiltinSelectionContributors },
+    ] = await Promise.all([
       import("./WorkbenchRoot"),
       import("./adapterRuntime"),
+      import("./integrations"),
+      import("./models/selectionContext/contributors"),
     ]);
     if (disposed) return;
 
-    const runtime = await loadAdapterRuntime();
+    // Built-in selection-context contributors register FIRST so the Info
+    // panel/prompt order is core → built-ins → integrations/adapters.
+    registerBuiltinSelectionContributors();
+
+    // Adapter runtime + integration ui halves (the left-rail plugin tabs)
+    // resolve together before first render.
+    const [runtime] = await Promise.all([
+      loadAdapterRuntime(),
+      initUiIntegrations(),
+    ]);
     if (disposed) return;
 
     root = createRoot(renderTarget);

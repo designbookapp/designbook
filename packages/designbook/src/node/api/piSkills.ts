@@ -1,5 +1,6 @@
 /**
- * Loads designbook's SHIPPED Agent Skills (skills/figma-pull/…) into the
+ * Loads the integrations' SHIPPED Agent Skills (e.g. the figma plugin's
+ * figma-pull skill, contributed via `PluginNodeSpec.skillsDir`) into the
  * embedded Pi session. The skills are designbook's own package assets — NOT
  * repo content — so they must load regardless of `projectTrusted`. The seam:
  * `DefaultResourceLoader`'s `additionalSkillPaths` are merged into the skill
@@ -11,7 +12,8 @@
  */
 
 import { existsSync } from "node:fs";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   DefaultResourceLoader,
   getAgentDir,
@@ -20,25 +22,23 @@ import {
 } from "@earendil-works/pi-coding-agent";
 
 /**
- * Absolute path to the packaged skills directory, or undefined when missing
- * (never expected in a healthy install — `skills/` ships in the npm `files`
- * list and the build also copies it to `dist/skills`).
+ * designbook's own (non-integration) packaged skills — currently the
+ * `variations` skill. Resolved relative to the COMPILED module, mirroring the
+ * figma plugin's `figmaSkillsDir`: `src/node/api` → `src/skills` from source,
+ * `dist/node/api` → `dist/skills` in a build (see scripts/copy-skills.mjs).
  */
-function packagedSkillsDir(packageRoot: string): string | undefined {
-  for (const candidate of [
-    resolve(packageRoot, "skills"),
-    resolve(packageRoot, "dist", "skills"),
-  ]) {
-    if (existsSync(resolve(candidate, "figma-pull", "SKILL.md"))) {
-      return candidate;
-    }
-  }
-  return undefined;
+function designbookCoreSkillsDir(): string | undefined {
+  const dir = resolve(dirname(fileURLToPath(import.meta.url)), "../../skills");
+  return existsSync(dir) ? dir : undefined;
 }
 
 type DesignbookResourceLoaderOptions = {
-  /** designbook package root (the dir containing package.json + skills/). */
-  packageRoot: string;
+  /**
+   * Absolute packaged-skill dirs to load (integration `skillsDir`
+   * contributions — e.g. the figma plugin's figma-pull skill). Non-existent
+   * entries are skipped.
+   */
+  skillPaths: string[];
   /** The Pi session cwd (agentCwd). */
   cwd: string;
   /** Settings manager already carrying the projectTrusted decision. */
@@ -49,24 +49,24 @@ type DesignbookResourceLoaderOptions = {
 
 /**
  * Builds the resource loader for `createAgentSession`: the same
- * DefaultResourceLoader the SDK would create on its own, plus designbook's
- * packaged skills dir as an `additionalSkillPaths` entry (trust-independent,
- * see module doc). Returns undefined when the skills dir is missing so the
- * caller can fall back to the SDK default loader.
+ * DefaultResourceLoader the SDK would create on its own, plus the
+ * integrations' packaged skills dirs as `additionalSkillPaths` entries
+ * (trust-independent, see module doc). Returns undefined when no skills dir
+ * exists so the caller can fall back to the SDK default loader.
  */
 async function createDesignbookResourceLoader(
   options: DesignbookResourceLoaderOptions,
 ): Promise<ResourceLoader | undefined> {
-  const skillsDir = packagedSkillsDir(options.packageRoot);
-  if (!skillsDir) return undefined;
+  const skillPaths = options.skillPaths.filter((dir) => existsSync(dir));
+  if (skillPaths.length === 0) return undefined;
   const loader = new DefaultResourceLoader({
     cwd: options.cwd,
     agentDir: options.agentDir ?? getAgentDir(),
     settingsManager: options.settingsManager,
-    additionalSkillPaths: [skillsDir],
+    additionalSkillPaths: skillPaths,
   });
   await loader.reload();
   return loader;
 }
 
-export { createDesignbookResourceLoader, packagedSkillsDir };
+export { createDesignbookResourceLoader, designbookCoreSkillsDir };

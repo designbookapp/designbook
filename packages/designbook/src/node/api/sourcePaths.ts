@@ -13,6 +13,21 @@
  */
 
 import { isAbsolute, relative, resolve } from "node:path";
+import { WORKTREES_DIR_REL } from "../lib/worktrees.ts";
+
+/**
+ * A relative path reaching into a NESTED branch worktree
+ * (`.designbook/worktrees/<branch>/…`). Branch worktrees now live inside the
+ * repo, so such a path resolves INSIDE the primary root and would otherwise
+ * pass containment — a cross-branch read/write from the primary. Rejected
+ * regardless of the active root: when the active root already IS a worktree,
+ * its own repo-relative paths never carry this prefix (no worktree nests
+ * another), so this only ever blocks the cross-root case.
+ */
+function reachesIntoWorktree(relPath: string): boolean {
+  const norm = relPath.replace(/\\/g, "/");
+  return norm === WORKTREES_DIR_REL || norm.startsWith(`${WORKTREES_DIR_REL}/`);
+}
 
 const SOURCE_FILE_EXTENSIONS = [
   ".tsx",
@@ -46,7 +61,8 @@ function resolveContainedPath(
   if (
     !insideProject ||
     insideProject.startsWith("..") ||
-    isAbsolute(insideProject)
+    isAbsolute(insideProject) ||
+    reachesIntoWorktree(insideProject)
   ) {
     return undefined;
   }

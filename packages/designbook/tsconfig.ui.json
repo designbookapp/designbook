@@ -1,7 +1,11 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
     "module": "ESNext",
     "moduleResolution": "bundler",
     "useDefineForClassFields": true,
@@ -20,11 +24,25 @@
     "noUncheckedSideEffectImports": true,
     "baseUrl": ".",
     "paths": {
-      "@designbook-ui/*": ["./src/ui/*"],
-      "@designbookapp/designbook/config": ["./src/config/index.ts"],
-      "@designbookapp/designbook/adapters": ["./src/ui/adapters/index.ts"]
+      "@designbook-ui/*": [
+        "./src/ui/*"
+      ],
+      "@designbookapp/designbook/config": [
+        "./src/config/index.ts"
+      ],
+      "@designbookapp/designbook/adapters": [
+        "./src/ui/adapters/index.ts"
+      ]
     },
-    "types": ["vite/client"]
+    "types": [
+      "vite/client"
+    ]
   },
-  "include": ["src/ui", "src/config"]
+  "include": [
+    "src/ui",
+    "src/config",
+    "src/integration",
+    "src/plugins/figma/shared",
+    "src/plugins/figma/ui"
+  ]
 }

@@ -12,7 +12,11 @@ export default defineConfig({
     tailwindcss(),
     designbookPlugin({
       config: "./designbook.config.tsx",
-      serverUrl: "http://localhost:8788",
+      // Env-overridable so a sidecar on a non-default port (verification
+      // runs, parallel checkouts, branch worktrees inheriting this file)
+      // can be targeted without editing the config.
+      serverUrl:
+        process.env.DESIGNBOOK_SERVER_URL ?? "http://localhost:8788",
     }),
   ],
 });

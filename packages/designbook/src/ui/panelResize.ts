@@ -9,9 +9,10 @@
 const PANEL_MIN_WIDTH = 260;
 /** Largest panel width, px — keeps the canvas visible on laptop screens. */
 const PANEL_MAX_WIDTH = 640;
-/** Default width for BOTH side panels (the old `w-105` = 26.25rem = 420px).
- * Also the double-click reset target of each drag handle. */
-const PANEL_DEFAULT_WIDTH = 420;
+/** Default width for BOTH side panels (fresh sessions only — a persisted
+ * user width always wins via `initialPanelWidth`). Also the double-click
+ * reset target of each drag handle. */
+const PANEL_DEFAULT_WIDTH = 280;
 
 /** Which edge of its panel a drag handle sits on: the left panel's handle is
  * on its "right" (inner) edge, the right panel's on its "left". Determines

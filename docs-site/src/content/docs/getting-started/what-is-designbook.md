@@ -1,6 +1,6 @@
 ---
 title: What is Designbook?
-description: A design workbench for React repos — a live component canvas plus an embedded coding agent that turns design edits into real code.
+description: Your React app from every angle — live, editable views for tokens, copy, flags, and code, plus an embedded coding agent that lands every edit as real code.
 ---
 
 Designbook is a **design workbench for React repos**. Point it at your codebase, register
@@ -12,13 +12,19 @@ and hot-reload exactly as they do in your own app. A `◈ designbook` toolbar pi
 running app opens a compact tool strip for selecting, prompting, and editing text right on
 the page, or expands into the full workbench canvas.
 
-What sets it apart from a component gallery is that it is **built for designers to change
-things**, not just look at them. The canvas exposes design tokens, translated copy, and
-feature flags as editable fields through *adapters*, and every edit is written back to its
-real source of truth — your theme CSS, your locale JSON, your flag files. For larger
-changes there is an embedded **Pi coding agent**: describe what you want in chat and it
-applies the change as real edits to your source files. Nothing here is a throwaway mockup;
-the output is code.
+What sets it apart from a component gallery is that it is **built for every discipline to
+change things**, not just look at them. The canvas exposes design tokens, translated copy,
+and feature flags as editable views of the same codebase through *adapters* — each
+discipline reads and edits its own layer, and every edit is written back to its real source
+of truth: your theme CSS, your locale JSON, your flag files. For larger changes there is an
+embedded **Pi coding agent**: describe what you want in chat and it applies the change as
+real edits to your source files. Nothing here is a throwaway mockup; the output is code.
+
+A useful way to think about it: each view shows the same app from a different angle. The
+theme adapter is the design view, the text adapter is the content view, flags are the
+product view, the code panel is the engineering view — much as a building gets one drawing
+per trade, each one true, none complete alone. The views are not copies: they all read and
+write the same files, so an edit made in one is immediately visible in every other.
 
 ## Feature highlights
 

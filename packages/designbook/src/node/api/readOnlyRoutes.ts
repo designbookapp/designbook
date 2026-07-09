@@ -11,6 +11,12 @@ const READ_ONLY_BLOCKED_ROUTES = new Set([
   "POST /api/i18n",
   "POST /api/po",
   "POST /api/changes/discard",
+  // Design variations (docs/specs/design-variations.md): generation and
+  // resolution both write repo files (variant files / promoted components).
+  "POST /api/variations/generate",
+  "POST /api/variations/iterate",
+  "POST /api/variations/retry",
+  "POST /api/variations/resolve",
 ]);
 
 export { READ_ONLY_BLOCKED_ROUTES };

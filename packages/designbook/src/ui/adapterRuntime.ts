@@ -46,6 +46,7 @@ import {
   resolveEffective,
   type FollowState,
 } from "./hostContext";
+import { registerSelectionContributor } from "@designbook-ui/models/selectionContext/registry";
 import { sourceLiteralAdapter } from "./adapters/sourceLiteralAdapter";
 
 type AdapterProvider = ComponentType<{
@@ -229,6 +230,17 @@ async function initAdapterRuntime(): Promise<AdapterRuntime> {
     }
   }
 
+  // Selection-context contributions (PREVIEW): adapters get the same hook
+  // integration plugins have — public `(sel, { apiUrl })` signature adapted
+  // onto the internal runner input.
+  for (const { adapter, setup } of entries) {
+    const contributor = setup?.selectionContext;
+    if (!contributor) continue;
+    registerSelectionContributor(`adapter:${adapter.name}`, (input, ctx) =>
+      contributor(input.node, { apiUrl: ctx.apiUrl }),
+    );
+  }
+
   const dimensions = aggregateDimensions(contributions);
   const tabs = aggregateTabs(contributions);
   const valueGetters = entries
@@ -355,43 +367,6 @@ async function initAdapterRuntime(): Promise<AdapterRuntime> {
   };
 }
 
-/**
- * Theme tokens exposed for Figma push token-attribution. A theme adapter
- * registers (and re-registers on variant/mode change) the CSS custom
- * properties it owns plus their Figma variable names; the serializer probes
- * each `cssVar`'s computed value inside the canvas theme element to attribute
- * concrete colors/dimensions back to tokens. No source registered → pushes
- * still work, just without variable bindings.
- */
-type FigmaTokenSource = {
-  /** Figma variable collection the tokens live in, e.g. "designbook/theme". */
-  collection: string;
-  tokens: Array<{
-    /** CSS custom property name WITHOUT the leading `--`. */
-    cssVar: string;
-    /** Figma variable name (token name through the adapter's NameMap). */
-    figmaName: string;
-    type: "color" | "dimension" | "number" | "string";
-    /**
-     * Raw CSS expression to probe INSTEAD of `var(--cssVar)` when the custom
-     * property may not exist in the document — derived tokens like the
-     * Tailwind radius scale (`calc(var(--radius) * 1.4)` lives in the
-     * `@theme` block, which may be inlined away by the build).
-     */
-    cssValue?: string;
-  }>;
-};
-
-let figmaTokenSource: FigmaTokenSource | undefined;
-
-function setFigmaTokenSource(source: FigmaTokenSource | undefined): void {
-  figmaTokenSource = source;
-}
-
-function getFigmaTokenSource(): FigmaTokenSource | undefined {
-  return figmaTokenSource;
-}
-
 let runtime: AdapterRuntime | undefined;
 
 async function loadAdapterRuntime(): Promise<AdapterRuntime> {
@@ -419,9 +394,7 @@ function useAdapterSnapshot(): AdapterSnapshot {
 
 export {
   getAdapterRuntime,
-  getFigmaTokenSource,
   loadAdapterRuntime,
-  setFigmaTokenSource,
   useAdapterSnapshot,
 };
-export type { AdapterRuntime, AdapterSnapshot, FigmaTokenSource };
+export type { AdapterRuntime, AdapterSnapshot };

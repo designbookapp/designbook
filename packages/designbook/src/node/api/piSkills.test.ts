@@ -14,7 +14,8 @@ import {
   loadSkillsFromDir,
   SettingsManager,
 } from "@earendil-works/pi-coding-agent";
-import { createDesignbookResourceLoader, packagedSkillsDir } from "./piSkills.ts";
+import { createDesignbookResourceLoader } from "./piSkills.ts";
+import { figmaSkillsDir } from "../../plugins/figma/node/index.ts";
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 
@@ -28,21 +29,17 @@ afterAll(() => {
   for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
 });
 
-describe("packagedSkillsDir", () => {
-  it("resolves the shipped skills dir from the package root", () => {
-    const dir = packagedSkillsDir(packageRoot);
-    expect(dir).toBe(resolve(packageRoot, "skills"));
-  });
-
-  it("returns undefined when no skills dir exists", () => {
-    expect(packagedSkillsDir(tempDir("db-no-skills-"))).toBeUndefined();
+describe("figmaSkillsDir", () => {
+  it("resolves the plugin's packaged skills dir (contains figma-pull)", () => {
+    const dir = figmaSkillsDir();
+    expect(dir).toBe(resolve(packageRoot, "src/plugins/figma/skills"));
   });
 });
 
 describe("figma-pull SKILL.md", () => {
   it("parses as a valid Agent Skill with the auto-invocation description", () => {
     const { skills, diagnostics } = loadSkillsFromDir({
-      dir: packagedSkillsDir(packageRoot)!,
+      dir: figmaSkillsDir()!,
       source: "designbook",
     });
     expect(diagnostics).toEqual([]);
@@ -67,7 +64,7 @@ describe("createDesignbookResourceLoader", () => {
     const agentDir = tempDir("db-agent-");
 
     const loader = await createDesignbookResourceLoader({
-      packageRoot,
+      skillPaths: [figmaSkillsDir()!],
       cwd,
       agentDir,
       settingsManager: SettingsManager.create(cwd, agentDir, {
@@ -81,11 +78,11 @@ describe("createDesignbookResourceLoader", () => {
     expect(names).not.toContain("repo-skill"); // untrusted repo skill stays gated
   });
 
-  it("returns undefined (SDK default loader) when the skills dir is missing", async () => {
+  it("returns undefined (SDK default loader) when no skills dir exists", async () => {
     const cwd = tempDir("db-empty-");
     const agentDir = tempDir("db-agent2-");
     const loader = await createDesignbookResourceLoader({
-      packageRoot: cwd,
+      skillPaths: [join(cwd, "does-not-exist")],
       cwd,
       agentDir,
       settingsManager: SettingsManager.create(cwd, agentDir, {

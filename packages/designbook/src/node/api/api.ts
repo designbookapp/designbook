@@ -7,12 +7,10 @@
 import {
   AuthStorage,
   createAgentSession,
-  defineTool,
   ModelRegistry,
   SessionManager,
   SettingsManager,
   type AgentSession,
-  type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import { execFile } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
@@ -22,11 +20,12 @@ import type { Duplex } from "node:stream";
 import { dirname, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { Type } from "typebox";
 import {
   ensureInstance,
   getCurrentBranch,
+  instanceNavigationUrl,
   listWorktrees,
+  listWorktreesForProxy,
   stopAllInstances,
 } from "../lib/worktrees.ts";
 import {
@@ -37,21 +36,44 @@ import {
 import { replacePoMsgstr } from "./poEdit.ts";
 import { replaceCssVar } from "./cssVarEdit.ts";
 import { discardChange, fileDiff, listChanges } from "./gitChanges.ts";
+import { rebaseConfigDir, resolveActiveRepoRoot } from "./activeRepoRoot.ts";
 import { READ_ONLY_BLOCKED_ROUTES } from "./readOnlyRoutes.ts";
 import {
   resolveContainedPath,
   resolveSourceFile as resolveSourceFileIn,
 } from "./sourcePaths.ts";
 import { createRecentWrites, toRepoRel } from "../sidecar/hmrSuppress.ts";
-import { createFigmaBridge } from "../figma/figmaBridge.ts";
-import { formatPullPrompt } from "../../config/figmaPullPrompt.ts";
-import type { PullRenderContext } from "../../config/figmaRender.ts";
-import { createDesignbookResourceLoader } from "./piSkills.ts";
+import {
+  createSessionRegistry,
+  PRIMARY_SESSION_KEY,
+  resolveActiveSessionKey,
+} from "./sessionRegistry.ts";
+import { createDeviceBridge } from "../bridge/deviceBridge.ts";
+import {
+  createDesignbookResourceLoader,
+  designbookCoreSkillsDir,
+} from "./piSkills.ts";
+import {
+  createVariationsOrchestrator,
+  extractAssistantText,
+  extractTurnErrorMessage,
+} from "./variations.ts";
+import { readJsonBody, sendJson } from "../integration/http.ts";
+import {
+  createIntegrationRegistry,
+  type NodeIntegration,
+} from "../integration/registry.ts";
+import { parseDisabledIntegrations } from "../integration/configToggles.ts";
+import { builtinNodeIntegrations } from "../integrations/builtins.ts";
 
 const execFileAsync = promisify(execFile);
 
 /** The SDK's read-class built-in tool names (see createReadOnlyTools in the pinned SDK). */
 const READ_ONLY_TOOL_NAMES = ["read", "grep", "find", "ls"];
+
+/** Ephemeral variation sessions: read + write/edit, NO bash — generation is
+ * confined to writing the one assigned file (design-variations spec, D1). */
+const VARIANT_TOOL_NAMES = [...READ_ONLY_TOOL_NAMES, "write", "edit"];
 
 const packageRoot = resolve(
   dirname(fileURLToPath(import.meta.url)),
@@ -89,7 +111,40 @@ type ApiOptions = {
    * for adapter-managed writes the UI already reflects optimistically.
    */
   onDataWrite?: (absPath: string) => void;
+  /**
+   * Proxy-topology branch switching (the sidecar provides this; host mode
+   * leaves it unset). When present, `POST /api/worktrees` retargets the
+   * proxied dev server to the branch's worktree instead of spawning a
+   * designbook instance, and the response's `url` keeps the browser on the
+   * stable proxy origin (C3.2: "the user's URL never changes").
+   */
+  worktreeProxy?: WorktreeProxy;
 };
+
+type WorktreeProxy = {
+  /** Branch whose worktree the proxy currently serves (undefined = primary). */
+  activeBranch: () => string | undefined;
+  /**
+   * Absolute worktree root of the active branch (undefined = primary
+   * checkout). The per-branch agent session's cwd (per-branch-sessions spec).
+   */
+  activeWorktreeRoot?: () => string | undefined;
+  /** Prepare the branch's worktree and retarget the proxied dev server to it. */
+  switchTo: (
+    branch: string,
+    notify: (message: string) => void,
+  ) => Promise<void>;
+  /** Stop the branch's warm dev server (worktree removed — reconcile). */
+  stopBranch?: (branch: string) => void;
+};
+
+/**
+ * The navigation target `POST /api/worktrees` returns in proxy topology: the
+ * deep-link bootstrap on the SAME origin — it re-expands the workbench after
+ * the reload while the proxy (recovery page included, while the new dev
+ * server boots) keeps serving the stable URL.
+ */
+const PROXY_SWITCH_URL = "/__designbook";
 
 function createApi(options: ApiOptions) {
   const {
@@ -100,12 +155,44 @@ function createApi(options: ApiOptions) {
     readOnly = false,
     trustProject = false,
     onDataWrite,
+    worktreeProxy,
   } = options;
   const configDir = dirname(configPath);
   const configRelPath = relative(projectRoot, configPath);
-  const agentCwd = projectRoot;
 
   const clients = new Set<ServerResponse>();
+
+  /**
+   * The ONE repo root this request's file operation resolves against: the
+   * active branch's worktree in proxy topology after a switch, the primary
+   * checkout otherwise (host mode / pre-switch — byte-identical to before).
+   * Every per-request file handler calls this ONCE and threads the result
+   * through containment + read/write + recent-writes bookkeeping; mixing
+   * roots within a request is a path-traversal hazard (enforced by the
+   * source scan in activeRepoRoot.test.ts).
+   */
+  function activeRepoRoot(): string {
+    return resolveActiveRepoRoot({
+      activeWorktreeRoot: worktreeProxy?.activeWorktreeRoot?.(),
+      projectRoot,
+    });
+  }
+
+  /** The config file's directory inside the request's resolved root (see rebaseConfigDir). */
+  function activeConfigDirFor(repoRoot: string): string {
+    return rebaseConfigDir({ configDir, projectRoot, repoRoot });
+  }
+
+  /**
+   * The variations home's owner for a request: the config dir, repo-root-
+   * relative posix ("" = config at repo root). MONOREPO RULE (design-
+   * variations spec §A): the APP owns `.designbook/variations` — in a
+   * monorepo it lives under the config dir, never at the git root.
+   */
+  function activeAppDir(repoRoot: string): string {
+    return relative(repoRoot, activeConfigDirFor(repoRoot))
+      .replaceAll("\\", "/");
+  }
 
   // Short-lived record of repo-relative paths designbook just wrote through a
   // data endpoint. Consumed two ways: host mode passes
@@ -113,17 +200,20 @@ function createApi(options: ApiOptions) {
   // mode runs in a SEPARATE process (the target app's Vite) and polls this
   // record via `GET /api/recent-writes`. Both drop the adapter-managed reload
   // the UI already reflects optimistically.
+  //
+  // `repoRoot` is the caller's resolved active root: the repo-rel key must be
+  // computed against the SAME root the write landed under, so whichever dev
+  // server is active (primary's or the branch worktree's — both poll
+  // `/api/recent-writes`) sees the plain repo-rel path it expects, never a
+  // `../<worktree>/…` mongrel.
   const recentWrites = createRecentWrites();
-  function noteDataWrite(absPath: string) {
-    recentWrites.record(toRepoRel(projectRoot, absPath));
+  function noteDataWrite(absPath: string, repoRoot: string) {
+    recentWrites.record(toRepoRel(repoRoot, absPath));
     onDataWrite?.(absPath);
   }
 
   const authStorage = AuthStorage.create();
   const modelRegistry = ModelRegistry.create(authStorage);
-
-  let sessionPromise: Promise<AgentSession> | undefined;
-  let unsubscribe: (() => void) | undefined;
 
   function log(message: string) {
     console.log(`[designbook] ${new Date().toISOString()} ${message}`);
@@ -154,17 +244,6 @@ function createApi(options: ApiOptions) {
     logDebug(`pi event: ${piEvent.type ?? "unknown"}`);
   }
 
-  function sendJson(
-    response: ServerResponse,
-    status: number,
-    payload: unknown,
-  ) {
-    response.writeHead(status, {
-      "content-type": "application/json; charset=utf-8",
-    });
-    response.end(JSON.stringify(payload));
-  }
-
   function sendSse(
     response: ServerResponse,
     eventName: string,
@@ -180,241 +259,84 @@ function createApi(options: ApiOptions) {
     }
   }
 
-  // --- Figma bridge ------------------------------------------------------
+  // --- Integration registration (B1: static builtins, no discovery) -------
   //
-  // A Figma plugin's UI iframe connects outbound to `/api/figma-bridge`
-  // (plugins can't listen on a socket) and executes `figma.*` calls on our
-  // behalf. See figmaBridge.ts for the wire protocol.
-  const figmaBridge = createFigmaBridge();
-  figmaBridge.onEvent((name, data) => {
-    broadcast("figma-event", { name, data });
+  // Built-in integrations (figma) register their node halves through the
+  // public PluginNodeSpec seam (see src/plugins/figma/node). Opt-out (D1): a
+  // literal `integrations: { <name>: false }` in the config source disables
+  // one node-side (routes, bridge, tools, skills, events).
+  const disabledIntegrations = (() => {
+    try {
+      return parseDisabledIntegrations(readFileSync(configPath, "utf8"));
+    } catch {
+      return new Set<string>();
+    }
+  })();
+  const nodeIntegrations: NodeIntegration[] = builtinNodeIntegrations().filter(
+    (integration) => !disabledIntegrations.has(integration.name),
+  );
+  const integrationRegistry = createIntegrationRegistry({
+    integrations: nodeIntegrations,
+    createBridge: createDeviceBridge,
+    log,
   });
-  figmaBridge.onConnectionChange((connected) => {
-    log(`figma plugin ${connected ? "connected" : "disconnected"}`);
+  integrationRegistry.initEvents(broadcast);
+
+  // --- Per-branch session registry (per-branch-sessions spec) --------------
+  //
+  // One in-process Pi session per branch, keyed by branch name (primary
+  // checkout → PRIMARY_SESSION_KEY): cwd = the branch's worktree root, lazily
+  // created on first use, KEPT ALIVE across branch switches, disposed when
+  // the worktree disappears (reconcile in handleListWorktrees) or on
+  // shutdown. Host mode has no worktreeProxy, so everything resolves to the
+  // primary session — unchanged single-session behavior.
+  const sessions = createSessionRegistry<AgentSession>({
+    primaryCwd: projectRoot,
+    resolveCwd: (key) =>
+      worktreeProxy?.activeBranch() === key
+        ? worktreeProxy.activeWorktreeRoot?.()
+        : undefined,
+    log,
+    create: createSessionFor,
   });
 
-  type FigmaNodeSummary = {
-    id: string;
-    name: string;
-    type: string;
-    width?: number;
-    height?: number;
-    fills?: unknown;
-    characters?: string;
-  };
-
-  function summarizeFigmaNodes(nodes: FigmaNodeSummary[]): string {
-    if (nodes.length === 0) return "No nodes selected in Figma.";
-    const lines = nodes.map((node) => {
-      const size =
-        node.width !== undefined && node.height !== undefined
-          ? ` ${Math.round(node.width)}x${Math.round(node.height)}`
-          : "";
-      const text = node.characters ? ` "${node.characters}"` : "";
-      return `- ${node.name} (${node.type}, id: ${node.id})${size}${text}`;
+  /** The session key API handlers operate on (see resolveActiveSessionKey). */
+  function activeSessionKey(): string {
+    return resolveActiveSessionKey({
+      activeBranch: worktreeProxy?.activeBranch(),
+      activeWorktreeRoot: worktreeProxy?.activeWorktreeRoot?.(),
+      projectRoot,
     });
-    return `Selected ${nodes.length} node(s) in Figma:\n${lines.join("\n")}`;
   }
 
-  // Decision #6 (tool registration while no plugin is connected): the Pi SDK
-  // only accepts `customTools` at `createAgentSession()` time — there is no
-  // `registerTool`/`unregisterTool` on a live `AgentSession` (that API only
-  // exists on the extension runtime's `pi` object, which this embedding
-  // doesn't use). So instead of a disruptive session reset every time a
-  // plugin connects/disconnects, the Figma tools are registered statically
-  // and always active; each `execute` just throws a clear, LLM-facing error
-  // when `figmaBridge.isConnected()` is false (the SDK catches thrown tool
-  // errors, marks the result `isError: true`, and keeps the session alive —
-  // see pi-coding-agent/docs/extensions.md "Signaling errors"). `figma_status`
-  // lets Pi (and the designer) check connection state without a round trip.
-  const figmaTools: ToolDefinition[] = [
-    defineTool({
-      name: "figma_get_selection",
-      label: "Get Figma Selection",
-      description:
-        "Reads the current selection in the connected Figma file (requires the designbook Figma plugin to be running and connected).",
-      parameters: Type.Object({}),
-      execute: async () => {
-        const nodes = (await figmaBridge.invoke(
-          "figma_get_selection",
-          {},
-        )) as FigmaNodeSummary[];
-        return {
-          content: [{ type: "text" as const, text: summarizeFigmaNodes(nodes) }],
-          details: { nodes },
-        };
-      },
-    }),
-    defineTool({
-      name: "figma_create_frame",
-      label: "Create Figma Frame",
-      description:
-        "Creates a new frame on the current page of the connected Figma file (requires the designbook Figma plugin to be running and connected).",
-      parameters: Type.Object({
-        name: Type.String({ description: "Name for the new frame." }),
-        width: Type.Number({ description: "Frame width in px." }),
-        height: Type.Number({ description: "Frame height in px." }),
-        fills: Type.Optional(
-          Type.Array(
-            Type.Object({
-              type: Type.String({ description: 'Paint type, e.g. "SOLID".' }),
-              color: Type.Optional(
-                Type.Object({
-                  r: Type.Number(),
-                  g: Type.Number(),
-                  b: Type.Number(),
-                }),
-              ),
-              opacity: Type.Optional(Type.Number()),
-            }),
-            { description: "Fills to apply to the frame." },
-          ),
-        ),
-        text: Type.Optional(
-          Type.String({
-            description: "Optional text content added as a child text node.",
-          }),
-        ),
-      }),
-      execute: async (_toolCallId, params) => {
-        const result = (await figmaBridge.invoke("figma_create_frame", params)) as {
-          nodeId: string;
-          url: string;
-        };
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: `Created frame "${params.name}" in Figma: ${result.url}`,
-            },
-          ],
-          details: result,
-        };
-      },
-    }),
-    defineTool({
-      name: "figma_get_variables",
-      label: "Get Figma Variables",
-      description:
-        "Reads every local variable collection (modes + variables with their per-mode values) from the connected Figma file (requires the designbook Figma plugin to be running and connected). Structural — no token mapping is applied.",
-      parameters: Type.Object({}),
-      execute: async () => {
-        const result = (await figmaBridge.invoke(
-          "figma_get_variables",
-          {},
-        )) as { collections?: unknown[] };
-        const count = Array.isArray(result.collections)
-          ? result.collections.length
-          : 0;
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: `Read ${count} local variable collection(s) from Figma.`,
-            },
-          ],
-          details: result,
-        };
-      },
-    }),
-    defineTool({
-      name: "figma_set_variables",
-      label: "Set Figma Variables",
-      description:
-        "Creates or updates a local variable collection and its variables in the connected Figma file (requires the designbook Figma plugin to be running and connected). Structural — values are passed through verbatim (COLOR as {r,g,b,a}).",
-      parameters: Type.Object({
-        collection: Type.String({ description: "Collection name to find or create." }),
-        modes: Type.Array(Type.String(), {
-          description: "Mode names to ensure exist on the collection.",
-        }),
-        variables: Type.Array(
-          Type.Object({
-            name: Type.String(),
-            type: Type.Union([
-              Type.Literal("COLOR"),
-              Type.Literal("FLOAT"),
-              Type.Literal("STRING"),
-            ]),
-            valuesByMode: Type.Record(Type.String(), Type.Any()),
-          }),
-          { description: "Variables to create/update, with per-mode values." },
-        ),
-      }),
-      execute: async (_toolCallId, params) => {
-        const result = (await figmaBridge.invoke(
-          "figma_set_variables",
-          params,
-        )) as { collectionId: string; created: number; updated: number };
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: `Synced Figma collection "${params.collection}": ${result.created} created, ${result.updated} updated.`,
-            },
-          ],
-          details: result,
-        };
-      },
-    }),
-    defineTool({
-      name: "figma_pull_component",
-      label: "Pull Figma Component",
-      description:
-        "Reads a designbook component out of the connected Figma file as an annotated HTML target (the declarative render the designer authored), and returns a prompt asking you to rewrite the component so it renders that output. Handles both edits and brand-new components. Follow the figma-pull skill for the annotation format (data-slot/data-i18n/data-token-*/data-component/data-list) and reconciliation rules. Requires the designbook Figma plugin running and a prior push of the component. Read the component's source before editing.",
-      parameters: Type.Object({
-        componentId: Type.String({
-          description:
-            'designbook registry id of the component, e.g. "product.ProductCard".',
-        }),
-      }),
-      execute: async (_toolCallId, params) => {
-        const { html, render } = await pullComponentHtml(params.componentId);
-        const text = formatPullPrompt({
-          componentId: params.componentId,
-          html,
-          render,
-        });
-        return {
-          content: [{ type: "text" as const, text }],
-          details: { componentId: params.componentId, html, render },
-        };
-      },
-    }),
-    defineTool({
-      name: "figma_status",
-      label: "Figma Connection Status",
-      description:
-        "Reports whether the designbook Figma plugin is currently connected, and which file/page it's connected to. Does not require a connection.",
-      parameters: Type.Object({}),
-      execute: async () => {
-        const connected = figmaBridge.isConnected();
-        const info = figmaBridge.getInfo();
-        const text = connected
-          ? `Figma plugin connected (file: ${info?.fileName ?? "unknown"}, page: ${info?.page ?? "unknown"}).`
-          : "No Figma plugin connected. Open the designbook plugin in Figma to connect.";
-        return {
-          content: [{ type: "text" as const, text }],
-          details: { connected, info },
-        };
-      },
-    }),
-  ];
+  /** The wire encoding of a session key: absent = primary (compat). */
+  function wireBranch(key: string): string | undefined {
+    return key === PRIMARY_SESSION_KEY ? undefined : key;
+  }
 
   async function getSession() {
-    sessionPromise ??= createSession().catch((error: unknown) => {
-      sessionPromise = undefined;
-      throw error;
-    });
-    return sessionPromise;
+    return sessions.get(activeSessionKey());
+  }
+
+  function broadcastBranchStatus() {
+    broadcast("branch-status", { statuses: sessions.statuses() });
+  }
+
+  /** Fold agent start/end into the per-branch status the switcher badges show. */
+  function trackAgentStatus(key: string, event: unknown) {
+    const type = (event as { type?: string }).type;
+    if (type !== "agent_start" && type !== "agent_end") return;
+    sessions.setStatus(key, type === "agent_start" ? "working" : "done");
+    broadcastBranchStatus();
   }
 
   /** git dirty-tree warning (backlog #7): non-fatal, best-effort, once per session. */
-  async function checkDirtyWorkingTree(): Promise<void> {
+  async function checkDirtyWorkingTree(cwd: string): Promise<void> {
     try {
       const { stdout } = await execFileAsync(
         "git",
         ["status", "--porcelain"],
-        { cwd: projectRoot },
+        { cwd },
       );
       if (stdout.trim()) {
         broadcast("server-notice", {
@@ -435,21 +357,27 @@ function createApi(options: ApiOptions) {
    * session so it doesn't read as "designbook is broken." Degrades silently
    * if the repo has no `.pi/` at all.
    */
-  function notifyUntrustedProjectIfNeeded(): void {
+  function notifyUntrustedProjectIfNeeded(cwd: string): void {
     if (trustProject) return;
-    if (!existsSync(resolve(projectRoot, ".pi"))) return;
+    if (!existsSync(resolve(cwd, ".pi"))) return;
     broadcast("server-notice", {
       message:
         "Project is untrusted: .pi/ extensions and settings are not loaded. Pass --trust-project to load them.",
     });
   }
 
-  async function createSession() {
+  /** The registry's session factory: one Pi session per branch, cwd-scoped. */
+  async function createSessionFor(context: {
+    key: string;
+    cwd: string;
+    isPrimary: boolean;
+  }) {
+    const { key, cwd, isPrimary } = context;
     // Re-read ~/.pi/agent/auth.json so credentials written AFTER the server
-    // started (e.g. `npx pi` → /login) are picked up — this is what makes the
+    // started (e.g. `npx designbook login` → /login) are picked up — this is what makes the
     // chat's no-model "Retry" (POST /api/new-session) work without a restart.
     authStorage.reload();
-    const settingsManager = SettingsManager.create(agentCwd, undefined, {
+    const settingsManager = SettingsManager.create(cwd, undefined, {
       projectTrusted: trustProject,
     });
     // designbook's shipped skills (figma-pull): loaded via additionalSkillPaths
@@ -457,21 +385,22 @@ function createApi(options: ApiOptions) {
     // asset, so trust-INDEPENDENT; repo .pi/ resources stay gated by
     // projectTrusted exactly as before (see piSkills.ts).
     const resourceLoader = await createDesignbookResourceLoader({
-      packageRoot,
-      cwd: agentCwd,
+      skillPaths: packagedSkillPaths(),
+      cwd,
       settingsManager,
     });
-    if (!resourceLoader) {
-      log("packaged skills dir not found; figma-pull skill not loaded");
+    if (!resourceLoader && nodeIntegrations.length > 0) {
+      log("packaged skills dir not found; integration skills not loaded");
     }
     const { session, modelFallbackMessage } = await createAgentSession({
-      cwd: agentCwd,
+      cwd,
       authStorage,
       modelRegistry,
-      sessionManager: SessionManager.create(agentCwd),
+      // The SDK is cwd-scoped, so transcripts persist per branch.
+      sessionManager: SessionManager.create(cwd),
       settingsManager,
       ...(resourceLoader ? { resourceLoader } : {}),
-      customTools: figmaTools,
+      customTools: integrationRegistry.piTools(),
       ...(readOnly ? { tools: READ_ONLY_TOOL_NAMES } : {}),
     });
 
@@ -480,43 +409,259 @@ function createApi(options: ApiOptions) {
       broadcast("server-notice", { message: modelFallbackMessage });
     }
 
-    void checkDirtyWorkingTree();
-    notifyUntrustedProjectIfNeeded();
+    void checkDirtyWorkingTree(cwd);
+    notifyUntrustedProjectIfNeeded(cwd);
 
-    unsubscribe?.();
-    unsubscribe = session.subscribe((event) => {
+    // Display branch name: for primary the checkout's git branch; non-primary
+    // keys ARE branch names.
+    const branchName = isPrimary
+      ? await getCurrentBranch(cwd).catch(() => undefined)
+      : key;
+
+    // Branch-scoped events: non-primary payloads gain a `branch` field;
+    // primary payloads stay byte-identical (absent branch = primary).
+    const branch = wireBranch(key);
+    const unsubscribe = session.subscribe((event) => {
       logPiEvent(event);
-      broadcast("pi-event", event);
+      trackAgentStatus(key, event);
+      broadcast(
+        "pi-event",
+        branch ? { ...(event as object), branch } : event,
+      );
     });
 
     log(
-      `pi session ${session.sessionId} created (model: ${session.model?.id ?? "none"}, cwd: ${agentCwd})`,
+      `pi session ${session.sessionId} created (model: ${session.model?.id ?? "none"}, cwd: ${cwd}, branch: ${branchName ?? "?"})`,
     );
-    return session;
+    return { session, unsubscribe, branchName };
   }
 
+  /** All packaged skill dirs: integration skills + designbook's core skills
+   * (the `variations` skill). Used by branch sessions AND ephemeral ones. */
+  function packagedSkillPaths(): string[] {
+    const core = designbookCoreSkillsDir();
+    return [...integrationRegistry.skillsDirs(), ...(core ? [core] : [])];
+  }
+
+  // --- Design variations (docs/specs/design-variations.md, DECIDED) --------
+  //
+  // N parallel EPHEMERAL Pi sessions each write one candidate into
+  // `.designbook/variations/`; the orchestrator (variations.ts) owns the
+  // director step, landing verification, the durable index, and resolve
+  // semantics. Sessions here are DISPOSABLE: created per turn, restricted
+  // tools (director: read-only; variant: read+write/edit, no bash), disposed
+  // at turn end — and their pi-events are LOG-ONLY, never broadcast, so the
+  // main chat thread stays untouched (main chat free by design).
+  /**
+   * The ACTIVE branch session's selected model, if that session already
+   * exists (peek — never spawn a session just to read its model). Ephemeral
+   * variation turns inherit it (director + variants), mirroring
+   * resetSession's carry-over; absent → the SDK default.
+   */
+  async function activeSelectedModel(): Promise<
+    Parameters<AgentSession["setModel"]>[0] | undefined
+  > {
+    const entry = sessions.peek(activeSessionKey());
+    if (!entry) return undefined;
+    try {
+      return (await entry.promise).model ?? undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  async function runVariationTurn(params: {
+    cwd: string;
+    prompt: string;
+    mode: "director" | "variant";
+  }): Promise<{ text: string }> {
+    authStorage.reload();
+    const inheritedModel = await activeSelectedModel();
+    const settingsManager = SettingsManager.create(params.cwd, undefined, {
+      projectTrusted: trustProject,
+    });
+    const resourceLoader = await createDesignbookResourceLoader({
+      skillPaths: packagedSkillPaths(),
+      cwd: params.cwd,
+      settingsManager,
+    });
+    const { session } = await createAgentSession({
+      cwd: params.cwd,
+      authStorage,
+      modelRegistry,
+      sessionManager: SessionManager.create(params.cwd),
+      settingsManager,
+      ...(resourceLoader ? { resourceLoader } : {}),
+      tools:
+        params.mode === "director" ? READ_ONLY_TOOL_NAMES : VARIANT_TOOL_NAMES,
+    });
+    // Inherit the chat's selected model (default only when none selected).
+    if (inheritedModel && session.model?.id !== inheritedModel.id) {
+      await session.setModel(inheritedModel).catch(() => {});
+    }
+    const unsubscribe = session.subscribe(logPiEvent);
+    try {
+      await session.prompt(params.prompt);
+      // `prompt()` RESOLVES on provider errors (quota/auth/4xx) — the failure
+      // only exists on the transcript. Surface it, or the orchestrator can
+      // just report "no file written" with the real cause invisible.
+      const messages = session.messages as unknown[];
+      const errorMessage = extractTurnErrorMessage(messages);
+      return {
+        text: extractAssistantText(messages),
+        ...(errorMessage ? { errorMessage } : {}),
+      };
+    } finally {
+      unsubscribe();
+      session.dispose();
+    }
+  }
+
+  const variations = createVariationsOrchestrator({
+    broadcast,
+    log,
+    runTurn: runVariationTurn,
+  });
+
+  async function handleVariationsStatus(response: ServerResponse) {
+    const repoRoot = activeRepoRoot();
+    sendJson(
+      response,
+      200,
+      await variations.status(repoRoot, activeAppDir(repoRoot)),
+    );
+  }
+
+  async function handleVariationsGenerate(
+    request: IncomingMessage,
+    response: ServerResponse,
+  ) {
+    const repoRoot = activeRepoRoot();
+    const payload = await readJsonBody<{
+      baseEntryId?: unknown;
+      baseSourcePath?: unknown;
+      count?: unknown;
+      direction?: unknown;
+      context?: unknown;
+    }>(request);
+    const result = variations.generate({
+      repoRoot,
+      appDir: activeAppDir(repoRoot),
+      baseEntryId:
+        typeof payload.baseEntryId === "string" ? payload.baseEntryId : "",
+      baseSourcePath:
+        typeof payload.baseSourcePath === "string"
+          ? payload.baseSourcePath
+          : "",
+      count: typeof payload.count === "number" ? payload.count : undefined,
+      direction:
+        typeof payload.direction === "string" ? payload.direction : undefined,
+      context:
+        typeof payload.context === "string" ? payload.context : undefined,
+    });
+    if (result.error) {
+      sendJson(response, 400, { error: result.error });
+      return;
+    }
+    sendJson(response, 202, { accepted: true });
+  }
+
+  async function handleVariationsIterate(
+    request: IncomingMessage,
+    response: ServerResponse,
+  ) {
+    const repoRoot = activeRepoRoot();
+    const payload = await readJsonBody<{
+      base?: unknown;
+      slug?: unknown;
+      note?: unknown;
+    }>(request);
+    const result = variations.iterate({
+      repoRoot,
+      base: typeof payload.base === "string" ? payload.base : "",
+      slug: typeof payload.slug === "string" ? payload.slug : "",
+      note: typeof payload.note === "string" ? payload.note : "",
+    });
+    if (result.error) {
+      sendJson(response, 400, { error: result.error });
+      return;
+    }
+    sendJson(response, 202, { accepted: true });
+  }
+
+  async function handleVariationsRetry(
+    request: IncomingMessage,
+    response: ServerResponse,
+  ) {
+    const payload = await readJsonBody<{ base?: unknown; slug?: unknown }>(
+      request,
+    );
+    const result = variations.retry({
+      base: typeof payload.base === "string" ? payload.base : "",
+      slug: typeof payload.slug === "string" ? payload.slug : "",
+    });
+    if (result.error) {
+      sendJson(response, 400, { error: result.error });
+      return;
+    }
+    sendJson(response, 202, { accepted: true });
+  }
+
+  async function handleVariationsResolve(
+    request: IncomingMessage,
+    response: ServerResponse,
+  ) {
+    const repoRoot = activeRepoRoot();
+    const payload = await readJsonBody<{
+      base?: unknown;
+      action?: unknown;
+      slug?: unknown;
+      newName?: unknown;
+    }>(request);
+    const action = payload.action;
+    if (
+      action !== "keep" &&
+      action !== "keepAs" &&
+      action !== "discard" &&
+      action !== "abandon"
+    ) {
+      sendJson(response, 400, { error: "Unknown resolve action." });
+      return;
+    }
+    const result = await variations.resolve({
+      repoRoot,
+      appDir: activeAppDir(repoRoot),
+      base: typeof payload.base === "string" ? payload.base : "",
+      action,
+      slug: typeof payload.slug === "string" ? payload.slug : undefined,
+      newName:
+        typeof payload.newName === "string" ? payload.newName : undefined,
+    });
+    if (result.error) {
+      sendJson(response, result.status ?? 400, { error: result.error });
+      return;
+    }
+    sendJson(response, 200, { resolved: true });
+  }
+
+  /** New-conversation reset for the ACTIVE branch's session only. */
   async function resetSession() {
-    const previous = sessionPromise;
-    // Clear the memoized promise up front so any concurrent getSession() call
-    // builds a fresh session instead of reusing the one we're tearing down.
-    sessionPromise = undefined;
+    const key = activeSessionKey();
+    const previous = sessions.peek(key);
 
     let previousModel: Parameters<AgentSession["setModel"]>[0] | undefined;
-
     if (previous) {
       try {
-        const session = await previous;
-        previousModel = session.model;
-        await session.abort().catch(() => {});
-        unsubscribe?.();
-        unsubscribe = undefined;
-        session.dispose();
+        previousModel = (await previous.promise).model;
       } catch {
-        // The previous session never started successfully; nothing to dispose.
+        // The previous session never started successfully.
       }
     }
 
-    const session = await getSession();
+    // dispose() clears the registry entry up front, so any concurrent
+    // getSession() builds a fresh session instead of the one torn down.
+    await sessions.dispose(key);
+    const session = await sessions.get(key);
 
     // Carry the previously selected model into the new conversation.
     if (previousModel && session.model?.id !== previousModel.id) {
@@ -526,9 +671,15 @@ function createApi(options: ApiOptions) {
     return session;
   }
 
-  function serializeSession(session: AgentSession) {
+  function serializeSession(session: AgentSession, key: string) {
+    const entry = sessions.peek(key);
     return {
-      cwd: agentCwd,
+      // Scoping key: ABSENT for primary (wire compat); the chat binds its
+      // thread to this and drops other branches' pi-events.
+      branch: wireBranch(key),
+      // Display: the session's git branch (primary included).
+      branchName: entry?.branchName,
+      cwd: entry?.cwd ?? projectRoot,
       isStreaming: session.isStreaming,
       messages: session.messages,
       model: session.model,
@@ -538,26 +689,11 @@ function createApi(options: ApiOptions) {
     };
   }
 
-  async function readJsonBody<T>(
-    request: IncomingMessage,
-    maxBytes = 1024 * 1024,
-  ): Promise<T> {
-    const chunks: Buffer[] = [];
-    let totalBytes = 0;
-
-    for await (const chunk of request) {
-      const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-      totalBytes += buffer.byteLength;
-
-      if (totalBytes > maxBytes) {
-        throw new Error("Request body is too large.");
-      }
-
-      chunks.push(buffer);
-    }
-
-    const rawBody = Buffer.concat(chunks).toString("utf8");
-    return JSON.parse(rawBody || "{}") as T;
+  /** The active session + its serialized state (the common handler tail). */
+  async function activeSessionState() {
+    const key = activeSessionKey();
+    const session = await sessions.get(key);
+    return { key, session, state: serializeSession(session, key) };
   }
 
   type PromptPayload = {
@@ -609,11 +745,40 @@ function createApi(options: ApiOptions) {
     sendJson(response, 200, { aborted: true });
   }
 
+  /**
+   * The worktree-removal path (per-branch-sessions spec): there is no
+   * explicit "remove worktree" endpoint, so every worktree LIST reconciles
+   * the session registry against the live branches — a removed worktree's
+   * session is disposed (aborting any in-flight turn) and its warm dev
+   * server stopped.
+   */
+  function reconcileSessions(liveBranches: string[]) {
+    const removed = sessions.reconcile(new Set(liveBranches));
+    for (const branch of removed) {
+      worktreeProxy?.stopBranch?.(branch);
+    }
+    if (removed.length > 0) broadcastBranchStatus();
+  }
+
   async function handleListWorktrees(response: ServerResponse) {
     try {
-      const currentBranch = await getCurrentBranch(agentCwd);
-      const worktrees = await listWorktrees(agentCwd, currentBranch, port);
-      sendJson(response, 200, { currentBranch, worktrees });
+      const gitBranch = await getCurrentBranch(projectRoot);
+      if (worktreeProxy) {
+        // Proxy topology: the "current" branch is whichever worktree the
+        // proxy serves right now, not the repo checkout the agent works in.
+        const activeBranch = worktreeProxy.activeBranch() ?? gitBranch;
+        const worktrees = await listWorktreesForProxy(
+          projectRoot,
+          activeBranch,
+          port,
+        );
+        reconcileSessions(worktrees.map((worktree) => worktree.branch));
+        sendJson(response, 200, { currentBranch: activeBranch, worktrees });
+        return;
+      }
+      const worktrees = await listWorktrees(projectRoot, gitBranch, port);
+      reconcileSessions(worktrees.map((worktree) => worktree.branch));
+      sendJson(response, 200, { currentBranch: gitBranch, worktrees });
     } catch {
       // Not a git repo (fresh `npm create vite` app before `git init`) — branch
       // instances just aren't available; the UI hides the selector.
@@ -638,21 +803,40 @@ function createApi(options: ApiOptions) {
       return;
     }
 
-    const currentBranch = await getCurrentBranch(agentCwd);
+    const notify = (message: string) =>
+      broadcast("server-notice", { message });
+
+    // The UI navigates to the returned `url` verbatim (plus its own route
+    // hash) — it never assembles host:port URLs itself.
+    if (worktreeProxy) {
+      // Proxy topology: retarget the proxied dev server to the branch's
+      // worktree; the browser stays on the stable origin. While the new dev
+      // server boots, the proxy's recovery page covers the gap.
+      await worktreeProxy.switchTo(branch, notify);
+      sendJson(response, 200, { branch, url: PROXY_SWITCH_URL });
+      return;
+    }
+
+    // Host topology: each branch gets its own designbook instance; switching
+    // legitimately navigates the browser to that instance's origin.
+    const currentBranch = await getCurrentBranch(projectRoot);
     const instance = await ensureInstance({
-      repoRoot: agentCwd,
+      repoRoot: projectRoot,
       branch,
       currentBranch,
       configRelPath,
       hubPort: port,
-      notify: (message) => broadcast("server-notice", { message }),
+      notify,
     });
-    sendJson(response, 200, instance);
+    sendJson(response, 200, {
+      ...instance,
+      url: instanceNavigationUrl(request.headers.host, instance.port),
+    });
   }
 
   async function handleNewSession(response: ServerResponse) {
     const session = await resetSession();
-    const nextState = serializeSession(session);
+    const nextState = serializeSession(session, activeSessionKey());
     broadcast("state", nextState);
     sendJson(response, 200, nextState);
   }
@@ -701,9 +885,9 @@ function createApi(options: ApiOptions) {
       return;
     }
 
-    const session = await getSession();
+    const { key, session } = await activeSessionState();
     await session.setModel(model);
-    const nextState = serializeSession(session);
+    const nextState = serializeSession(session, key);
     broadcast("state", nextState);
     sendJson(response, 200, nextState);
   }
@@ -717,8 +901,16 @@ function createApi(options: ApiOptions) {
     });
 
     clients.add(response);
-    const session = await getSession();
-    sendSse(response, "state", serializeSession(session));
+    const { key, state } = await activeSessionState();
+    sendSse(response, "state", state);
+    // Badge hydration for the fresh client (a branch switch reloads the
+    // page), then clear the active branch's "agent finished" badge — its
+    // finished thread was just served.
+    sendSse(response, "branch-status", { statuses: sessions.statuses() });
+    if (sessions.peek(key)?.status === "done") {
+      sessions.setStatus(key, "idle");
+      broadcastBranchStatus();
+    }
 
     const keepAlive = setInterval(() => {
       response.write(": keep-alive\n\n");
@@ -745,9 +937,12 @@ function createApi(options: ApiOptions) {
     entries?: unknown;
   };
 
-  function resolveLocaleFile(relPath: string): string | undefined {
-    const localeFile = resolve(configDir, relPath);
-    const insideProject = relative(projectRoot, localeFile);
+  function resolveLocaleFile(
+    relPath: string,
+    repoRoot: string,
+  ): string | undefined {
+    const localeFile = resolve(activeConfigDirFor(repoRoot), relPath);
+    const insideProject = relative(repoRoot, localeFile);
     if (insideProject.startsWith("..") || insideProject.startsWith("/")) {
       return undefined;
     }
@@ -763,8 +958,11 @@ function createApi(options: ApiOptions) {
   ) {
     const payload = await readJsonBody<I18nPayload>(request);
 
+    const repoRoot = activeRepoRoot();
     const relPath = typeof payload.path === "string" ? payload.path : "";
-    const localeFile = relPath ? resolveLocaleFile(relPath) : undefined;
+    const localeFile = relPath
+      ? resolveLocaleFile(relPath, repoRoot)
+      : undefined;
     if (!localeFile) {
       sendJson(response, 400, {
         error: "A locale JSON path inside the project is required.",
@@ -831,7 +1029,7 @@ function createApi(options: ApiOptions) {
       // Locale files sit in `watch.ignored`, so this record isn't for HMR
       // suppression — it's how the injected plugin learns to invalidate the
       // stale transform-cache entry for the compiled locale module.
-      noteDataWrite(localeFile);
+      noteDataWrite(localeFile, repoRoot);
       await writeFile(localeFile, raw, "utf8");
       sendJson(response, 200, { ok: true });
     } catch (error) {
@@ -850,9 +1048,12 @@ function createApi(options: ApiOptions) {
   };
 
   /** Resolves a `.po` catalog path (config-relative), or undefined if it escapes the project. */
-  function resolvePoFile(relPath: string): string | undefined {
-    const poFile = resolve(configDir, relPath);
-    const insideProject = relative(projectRoot, poFile);
+  function resolvePoFile(
+    relPath: string,
+    repoRoot: string,
+  ): string | undefined {
+    const poFile = resolve(activeConfigDirFor(repoRoot), relPath);
+    const insideProject = relative(repoRoot, poFile);
     if (insideProject.startsWith("..") || insideProject.startsWith("/")) {
       return undefined;
     }
@@ -868,8 +1069,9 @@ function createApi(options: ApiOptions) {
   ) {
     const payload = await readJsonBody<PoPayload>(request);
 
+    const repoRoot = activeRepoRoot();
     const relPath = typeof payload.path === "string" ? payload.path : "";
-    const poFile = relPath ? resolvePoFile(relPath) : undefined;
+    const poFile = relPath ? resolvePoFile(relPath, repoRoot) : undefined;
     if (!poFile) {
       sendJson(response, 400, {
         error: "A .po catalog path inside the project is required.",
@@ -903,7 +1105,7 @@ function createApi(options: ApiOptions) {
         return;
       }
 
-      noteDataWrite(poFile);
+      noteDataWrite(poFile, repoRoot);
       await writeFile(poFile, updated, "utf8");
       log(`wrote po: ${relPath} (${payload.msgid.slice(0, 40)})`);
       sendJson(response, 200, { ok: true });
@@ -913,14 +1115,20 @@ function createApi(options: ApiOptions) {
     }
   }
 
-  /** Resolves a repo-relative source path, or undefined if it escapes the project or has a disallowed extension. */
-  function resolveSourceFile(relPath: string): string | undefined {
-    return resolveSourceFileIn(projectRoot, relPath);
+  /** Resolves a repo-relative source path against the ACTIVE root, or undefined if it escapes it or has a disallowed extension. */
+  function resolveSourceFile(
+    relPath: string,
+    repoRoot: string,
+  ): string | undefined {
+    return resolveSourceFileIn(repoRoot, relPath);
   }
 
   async function handleGetFile(url: URL, response: ServerResponse) {
+    const repoRoot = activeRepoRoot();
     const relPath = url.searchParams.get("path") ?? "";
-    const sourceFile = relPath ? resolveSourceFile(relPath) : undefined;
+    const sourceFile = relPath
+      ? resolveSourceFile(relPath, repoRoot)
+      : undefined;
 
     if (!sourceFile) {
       sendJson(response, 400, {
@@ -959,7 +1167,7 @@ function createApi(options: ApiOptions) {
       return;
     }
 
-    const sourceFile = resolveSourceFile(payload.path);
+    const sourceFile = resolveSourceFile(payload.path, activeRepoRoot());
     if (!sourceFile) {
       sendJson(response, 400, {
         error:
@@ -982,13 +1190,14 @@ function createApi(options: ApiOptions) {
   // --- Changes tab (git working tree vs HEAD) -----------------------------
 
   async function handleListChanges(response: ServerResponse) {
-    sendJson(response, 200, await listChanges(projectRoot));
+    sendJson(response, 200, await listChanges(activeRepoRoot()));
   }
 
   async function handleFileDiff(url: URL, response: ServerResponse) {
+    const repoRoot = activeRepoRoot();
     const relPath = url.searchParams.get("path") ?? "";
     const absPath = relPath
-      ? resolveContainedPath(projectRoot, relPath)
+      ? resolveContainedPath(repoRoot, relPath)
       : undefined;
     if (!absPath) {
       sendJson(response, 400, {
@@ -996,7 +1205,7 @@ function createApi(options: ApiOptions) {
       });
       return;
     }
-    sendJson(response, 200, await fileDiff(projectRoot, relPath, absPath));
+    sendJson(response, 200, await fileDiff(repoRoot, relPath, absPath));
   }
 
   type DiscardPayload = { path?: unknown };
@@ -1006,9 +1215,10 @@ function createApi(options: ApiOptions) {
     response: ServerResponse,
   ) {
     const payload = await readJsonBody<DiscardPayload>(request);
+    const repoRoot = activeRepoRoot();
     const relPath = typeof payload.path === "string" ? payload.path : "";
     const absPath = relPath
-      ? resolveContainedPath(projectRoot, relPath)
+      ? resolveContainedPath(repoRoot, relPath)
       : undefined;
     if (!absPath) {
       sendJson(response, 400, {
@@ -1018,11 +1228,11 @@ function createApi(options: ApiOptions) {
     }
 
     try {
-      const result = await discardChange(projectRoot, relPath, absPath);
+      const result = await discardChange(repoRoot, relPath, absPath);
       for (const touched of result.touchedPaths) {
         // Treat the restore like any designbook write so HMR-suppress drops
         // the echo the Changes tab already reflects.
-        noteDataWrite(resolve(projectRoot, touched));
+        noteDataWrite(resolve(repoRoot, touched), repoRoot);
       }
       log(`discarded changes: ${relPath}`);
       sendJson(response, 200, { ok: true });
@@ -1063,7 +1273,8 @@ function createApi(options: ApiOptions) {
       return;
     }
 
-    const sourceFile = resolveSourceFile(payload.path);
+    const repoRoot = activeRepoRoot();
+    const sourceFile = resolveSourceFile(payload.path, repoRoot);
     if (!sourceFile || !sourceFile.endsWith(".json")) {
       sendJson(response, 400, {
         error: "A JSON file path inside the project is required.",
@@ -1098,7 +1309,7 @@ function createApi(options: ApiOptions) {
       return;
     }
 
-    noteDataWrite(sourceFile);
+    noteDataWrite(sourceFile, repoRoot);
     await writeFile(sourceFile, updated, "utf8");
     log(`wrote json: ${payload.path} ${payload.keyPath}`);
     sendJson(response, 200, { ok: true });
@@ -1133,7 +1344,8 @@ function createApi(options: ApiOptions) {
       return;
     }
 
-    const sourceFile = resolveSourceFile(payload.path);
+    const repoRoot = activeRepoRoot();
+    const sourceFile = resolveSourceFile(payload.path, repoRoot);
     if (!sourceFile || !sourceFile.endsWith(".css")) {
       sendJson(response, 400, {
         error: "A CSS file path inside the project is required.",
@@ -1161,186 +1373,10 @@ function createApi(options: ApiOptions) {
       return;
     }
 
-    noteDataWrite(sourceFile);
+    noteDataWrite(sourceFile, repoRoot);
     await writeFile(sourceFile, updated, "utf8");
     log(`wrote style: ${payload.path} ${payload.selector} --${payload.prop}`);
     sendJson(response, 200, { ok: true });
-  }
-
-  // --- Figma variable REST proxies (browser Sync UI) --------------------
-  //
-  // The browser does all token↔variable mapping (see config/figmaTokens.ts);
-  // these endpoints are thin structural proxies over the plugin bridge. When
-  // no plugin is connected they answer 409 so the UI can gray out the buttons
-  // / show a clear message instead of a generic 500.
-
-  function handleFigmaStatus(response: ServerResponse) {
-    sendJson(response, 200, {
-      connected: figmaBridge.isConnected(),
-      info: figmaBridge.getInfo() ?? null,
-    });
-  }
-
-  async function handleFigmaGetVariables(response: ServerResponse) {
-    if (!figmaBridge.isConnected()) {
-      sendJson(response, 409, { error: "no plugin" });
-      return;
-    }
-    const result = await figmaBridge.invoke("figma_get_variables", {});
-    sendJson(response, 200, result);
-  }
-
-  async function handleFigmaSetVariables(
-    request: IncomingMessage,
-    response: ServerResponse,
-  ) {
-    if (!figmaBridge.isConnected()) {
-      sendJson(response, 409, { error: "no plugin" });
-      return;
-    }
-    const body = await readJsonBody<{
-      name?: unknown;
-      modes?: unknown;
-      variables?: unknown;
-    }>(request);
-    const result = await figmaBridge.invoke("figma_set_variables", {
-      collection: body.name,
-      modes: body.modes,
-      variables: body.variables,
-    });
-    sendJson(response, 200, result);
-  }
-
-  /** Serialized component pushes carry inline images — allow up to 25MB. */
-  const FIGMA_PUSH_MAX_BODY_BYTES = 25 * 1024 * 1024;
-
-  /** Error with the HTTP status the REST pull handler should answer with. */
-  type PullError = Error & { status: number };
-
-  function pullError(status: number, message: string): PullError {
-    const error = new Error(message) as PullError;
-    error.status = status;
-    return error;
-  }
-
-  /**
-   * Pull flow shared by `POST /api/figma/pull` and the Pi
-   * `figma_pull_component` tool: read the selected component back out of Figma
-   * as the annotated HTML target (see figma-plugin/readHtml.ts). Declarative —
-   * no baseline, no diff, no cursor. Throws `PullError` (409 disconnected, 404
-   * no pushed frame).
-   */
-  async function pullComponentHtml(
-    componentId: string,
-  ): Promise<{ componentId: string; html: string; render?: PullRenderContext }> {
-    if (!figmaBridge.isConnected()) {
-      throw pullError(
-        409,
-        "No Figma plugin connected. Open the designbook plugin in Figma.",
-      );
-    }
-
-    let result: { html: string; render?: PullRenderContext };
-    try {
-      result = (await figmaBridge.invoke(
-        "figma_read_html",
-        { componentId },
-        60_000,
-      )) as { html: string; render?: PullRenderContext };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      // The bridge only relays error messages; the plugin prefixes its
-      // missing-root error with this marker (see figma-plugin/readHtml.ts).
-      if (message.includes("[not-found]")) {
-        throw pullError(404, message.replace("[not-found] ", ""));
-      }
-      throw error;
-    }
-
-    log(`figma pull: ${componentId} -> ${result.html.length} html char(s)`);
-    return { componentId, html: result.html, render: result.render };
-  }
-
-  async function handleFigmaPull(
-    request: IncomingMessage,
-    response: ServerResponse,
-  ) {
-    const body = await readJsonBody<{ componentId?: unknown }>(request);
-    const componentId =
-      typeof body.componentId === "string" ? body.componentId.trim() : "";
-    if (!componentId) {
-      sendJson(response, 400, { error: "componentId is required." });
-      return;
-    }
-
-    try {
-      sendJson(response, 200, await pullComponentHtml(componentId));
-    } catch (error) {
-      const status = (error as Partial<PullError>).status;
-      if (typeof status === "number") {
-        sendJson(response, status, {
-          error: error instanceof Error ? error.message : String(error),
-        });
-        return;
-      }
-      throw error;
-    }
-  }
-
-  async function handleFigmaPush(
-    request: IncomingMessage,
-    response: ServerResponse,
-  ) {
-    if (!figmaBridge.isConnected()) {
-      sendJson(response, 409, { error: "no plugin" });
-      return;
-    }
-
-    const body = await readJsonBody<{ tree?: unknown }>(
-      request,
-      FIGMA_PUSH_MAX_BODY_BYTES,
-    );
-    const tree = body.tree as { componentId?: unknown } | undefined;
-    if (!tree || typeof tree.componentId !== "string" || !tree.componentId) {
-      sendJson(response, 400, {
-        error: "A serialized render tree (with componentId) is required.",
-      });
-      return;
-    }
-
-    const result = (await figmaBridge.invoke(
-      "figma_render_nodes",
-      { tree },
-      60_000,
-    )) as { nodeId?: string; warnings?: string[] };
-
-    log(`figma push: ${tree.componentId} -> ${result?.nodeId ?? "unknown"}`);
-    sendJson(response, 200, result);
-  }
-
-  /** Debug: raw annotated HTML for a pushed component (same read as pull). */
-  async function handleFigmaHtml(url: URL, response: ServerResponse) {
-    if (!figmaBridge.isConnected()) {
-      sendJson(response, 409, { error: "no plugin" });
-      return;
-    }
-    const componentId = (url.searchParams.get("componentId") ?? "").trim();
-    if (!componentId) {
-      sendJson(response, 400, { error: "componentId is required." });
-      return;
-    }
-    try {
-      sendJson(response, 200, await pullComponentHtml(componentId));
-    } catch (error) {
-      const status = (error as Partial<PullError>).status;
-      if (typeof status === "number") {
-        sendJson(response, status, {
-          error: error instanceof Error ? error.message : String(error),
-        });
-        return;
-      }
-      throw error;
-    }
   }
 
   async function handle(
@@ -1349,9 +1385,11 @@ function createApi(options: ApiOptions) {
     url: URL,
   ) {
     logDebug(`${request.method} ${url.pathname}`);
+    const requestKey = `${request.method} ${url.pathname}`;
     if (
       readOnly &&
-      READ_ONLY_BLOCKED_ROUTES.has(`${request.method} ${url.pathname}`)
+      (READ_ONLY_BLOCKED_ROUTES.has(requestKey) ||
+        integrationRegistry.writeRouteKeys().has(requestKey))
     ) {
       sendJson(response, 403, {
         error: "designbook is running in --read-only mode; writes are disabled.",
@@ -1360,8 +1398,8 @@ function createApi(options: ApiOptions) {
     }
     try {
       if (url.pathname === "/api/state" && request.method === "GET") {
-        const session = await getSession();
-        sendJson(response, 200, serializeSession(session));
+        const { state } = await activeSessionState();
+        sendJson(response, 200, state);
         return;
       }
 
@@ -1395,6 +1433,43 @@ function createApi(options: ApiOptions) {
 
       if (url.pathname === "/api/abort" && request.method === "POST") {
         await handleAbort(response);
+        return;
+      }
+
+      if (url.pathname === "/api/variations" && request.method === "GET") {
+        await handleVariationsStatus(response);
+        return;
+      }
+
+      if (
+        url.pathname === "/api/variations/generate" &&
+        request.method === "POST"
+      ) {
+        await handleVariationsGenerate(request, response);
+        return;
+      }
+
+      if (
+        url.pathname === "/api/variations/iterate" &&
+        request.method === "POST"
+      ) {
+        await handleVariationsIterate(request, response);
+        return;
+      }
+
+      if (
+        url.pathname === "/api/variations/retry" &&
+        request.method === "POST"
+      ) {
+        await handleVariationsRetry(request, response);
+        return;
+      }
+
+      if (
+        url.pathname === "/api/variations/resolve" &&
+        request.method === "POST"
+      ) {
+        await handleVariationsResolve(request, response);
         return;
       }
 
@@ -1461,52 +1536,34 @@ function createApi(options: ApiOptions) {
         return;
       }
 
-      if (url.pathname === "/api/figma/status" && request.method === "GET") {
-        handleFigmaStatus(response);
-        return;
-      }
-
-      if (url.pathname === "/api/figma/push" && request.method === "POST") {
-        await handleFigmaPush(request, response);
-        return;
-      }
-
-      if (url.pathname === "/api/figma/pull" && request.method === "POST") {
-        await handleFigmaPull(request, response);
-        return;
-      }
-
-      if (url.pathname === "/api/figma/html" && request.method === "GET") {
-        await handleFigmaHtml(url, response);
+      // Integration routes (canonical /api/x/<name>/… + legacy aliases), all
+      // same-origin-gated by the callers like every other /api route.
+      const integrationRoute = integrationRegistry.match(
+        request.method ?? "GET",
+        url.pathname,
+      );
+      if (integrationRoute) {
+        await integrationRoute.route.handler(
+          request,
+          response,
+          url,
+          integrationRoute.ctx,
+        );
         return;
       }
 
       if (
-        url.pathname === "/api/figma/variables" &&
-        request.method === "POST"
+        (url.pathname === "/api/hello" ||
+          url.pathname === "/api/figma-hello") &&
+        request.method === "GET"
       ) {
-        await handleFigmaGetVariables(response);
-        return;
-      }
-
-      if (
-        url.pathname === "/api/figma/variables" &&
-        request.method === "PUT"
-      ) {
-        await handleFigmaSetVariables(request, response);
-        return;
-      }
-
-      if (url.pathname === "/api/figma/variables" && request.method === "GET") {
-        // GET is the disconnected-probe path the E2E gate exercises; behaves
-        // like POST (read variables) but is safe to call without a body.
-        await handleFigmaGetVariables(response);
-        return;
-      }
-
-      if (url.pathname === "/api/figma-hello" && request.method === "GET") {
-        // The Figma plugin UI iframe runs from a data: URL (origin "null"),
-        // so its discovery fetch is a cross-origin request. Allow it.
+        // Generic tool-discovery probe (E1): public identity info only
+        // ({app, version, port}). Device plugins run from opaque origins (the
+        // Figma plugin's UI iframe is a data: URL, origin "null"), so this is
+        // deliberately the ONLY cross-origin-exempt route — ACAO:* here,
+        // exempted from the same-origin gate in apiOrigin.ts. Integrations
+        // cannot declare their own exemptions. `/api/figma-hello` is the
+        // legacy alias the shipped Figma plugin probes.
         response.setHeader("Access-Control-Allow-Origin", "*");
         sendJson(response, 200, {
           app: "designbook",
@@ -1524,25 +1581,32 @@ function createApi(options: ApiOptions) {
     }
   }
 
-  function handleFigmaUpgrade(
+  /**
+   * Route a WS upgrade to an integration's core device bridge. Only
+   * `/api/bridge/<name>` (plus declared legacy aliases like
+   * `/api/figma-bridge`) upgrade; returns false when `pathname` is not a
+   * bridge path so the caller can proxy/ignore it.
+   */
+  function handleBridgeUpgrade(
+    pathname: string,
     request: IncomingMessage,
     socket: Duplex,
     head: Buffer,
-  ) {
-    figmaBridge.handleUpgrade(request, socket, head);
+  ): boolean {
+    const bridge = integrationRegistry.bridgeForUpgradePath(pathname);
+    if (!bridge) return false;
+    bridge.handleUpgrade(request, socket, head);
+    return true;
   }
 
   async function shutdown() {
     stopAllInstances();
-    unsubscribe?.();
-    if (sessionPromise) {
-      const session = await sessionPromise.catch(() => undefined);
-      session?.dispose();
-    }
+    // Reap every branch's session (aborts in-flight turns).
+    await sessions.disposeAll();
   }
 
-  return { handle, handleFigmaUpgrade, shutdown };
+  return { handle, handleBridgeUpgrade, shutdown };
 }
 
 export { createApi };
-export type { ApiOptions };
+export type { ApiOptions, WorktreeProxy };

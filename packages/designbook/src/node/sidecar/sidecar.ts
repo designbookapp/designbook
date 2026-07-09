@@ -15,11 +15,11 @@
  *   - `/api/*`                       → createApi (same-origin: no CORS needed)
  *   - everything else                → HTTP proxy to the target dev server,
  *                                      or the recovery page when it's down
- *   - WS upgrades: `/api/figma-bridge` stays local; all others (their HMR
- *     socket) are spliced through to the target.
+ *   - WS upgrades: namespaced integration bridge paths
+ *     (`/__designbook/api/bridge/<name>` + legacy aliases) stay local; all
+ *     others (their HMR socket) are spliced through to the target.
  */
 
-import { execFile, spawn, type ChildProcess } from "node:child_process";
 import {
   createServer,
   request as httpRequest,
@@ -27,27 +27,23 @@ import {
   type ServerResponse,
 } from "node:http";
 import { existsSync } from "node:fs";
-import { promisify } from "node:util";
 import type { Duplex } from "node:stream";
 import {
   isCrossOriginExemptApiPath,
   rejectCrossOriginApiRequest,
 } from "../plugin/apiOrigin.ts";
 import { createApi } from "../api/api.ts";
+import { prepareWorktree } from "../lib/worktrees.ts";
 import { openBrowser } from "./openBrowser.ts";
+import { createTargetManager } from "./targetManager.ts";
 import {
   classifyDirectApiPath,
   classifyProxyPath,
   deepLinkBootstrapHtml,
-  FAILURE_SUMMARY_THRESHOLD,
-  parseTargetPort,
   recoveryPageHtml,
-  RESTART_BACKOFF_MS,
-  restartDelayMs,
   stripDesignbookNamespace,
+  worktreeTargetCwd,
 } from "./sidecarSupport.ts";
-
-const execFileAsync = promisify(execFile);
 
 type SidecarOptions = {
   /** Absolute path to the user's designbook config file. */
@@ -135,294 +131,6 @@ function directApiUrl(request: IncomingMessage): URL {
   );
 }
 
-const RING_BUFFER_LINES = 200;
-
-/**
- * Kill a `shell: true`, `detached: true` child AND its descendants. The child's
- * `.pid` is a process-group leader (its own session), so signalling `-pid`
- * reaches the grandchild (the actual Vite process) — a plain `child.kill()`
- * would only reap the wrapping shell and orphan Vite (leaking the port).
- */
-function killTree(child: ChildProcess, signal: NodeJS.Signals): void {
-  if (!child.pid) return;
-  try {
-    process.kill(-child.pid, signal);
-  } catch {
-    try {
-      child.kill(signal);
-    } catch {
-      /* already gone */
-    }
-  }
-}
-
-/**
- * Owns the target dev server: either an attached URL, or a spawned child that
- * it keeps alive (restart-on-exit with backoff), whose port it discovers from
- * stdout, and whose last output it rings-buffers for the recovery page.
- */
-function createTargetManager(options: {
-  projectRoot: string;
-  targetCwd?: string;
-  targetUrl?: string;
-  targetCmd?: string;
-  targetPort?: number;
-  log: (msg: string) => void;
-}) {
-  const { projectRoot, targetUrl, log } = options;
-
-  let host = "localhost";
-  let port: number | undefined = options.targetPort;
-  // Spawn dir: the app package (where `dev`/`design` scripts live), which in a
-  // monorepo is NOT the git root. Falls back to projectRoot.
-  let cwd = options.targetCwd ?? projectRoot;
-  let child: ChildProcess | undefined;
-  // Consecutive failures since the last successful boot (drives backoff AND the
-  // "failing repeatedly" summary). Reset to 0 when a port is discovered.
-  let restartCount = 0;
-  let failureSummaryLogged = false;
-  let lastStderrLine = "";
-  let restartTimer: ReturnType<typeof setTimeout> | undefined;
-  let shuttingDown = false;
-  let lastExitReason: string | undefined;
-  const ring: string[] = [];
-
-  // Attach mode: fixed URL, never spawn.
-  const attached = Boolean(targetUrl);
-  if (targetUrl) {
-    try {
-      const u = new URL(targetUrl);
-      host = u.hostname;
-      port = Number(u.port) || (u.protocol === "https:" ? 443 : 80);
-    } catch {
-      throw new Error(`[designbook dev] invalid --target-url: ${targetUrl}`);
-    }
-  }
-
-  function pushLog(chunk: Buffer, sink: NodeJS.WriteStream, isStderr = false) {
-    const text = chunk.toString();
-    sink.write(text);
-    for (const line of text.split("\n")) {
-      if (line.trim()) {
-        ring.push(line);
-        if (isStderr) lastStderrLine = line.trim();
-      }
-    }
-    while (ring.length > RING_BUFFER_LINES) ring.shift();
-  }
-
-  function detectPackageManager(dir: string): string {
-    if (existsSync(`${dir}/pnpm-lock.yaml`)) return "pnpm";
-    if (existsSync(`${dir}/yarn.lock`)) return "yarn";
-    return "npm";
-  }
-
-  /** The default spawn command: run the target package's `dev` script. */
-  function defaultCmd(dir: string): string {
-    const pm = detectPackageManager(dir);
-    return `${pm} run dev`;
-  }
-
-  function spawnChild() {
-    if (attached || shuttingDown) return;
-    const cmd = options.targetCmd ?? defaultCmd(cwd);
-    log(`spawning target: ${cmd} (cwd: ${cwd})`);
-    // A shell so `pnpm`/`yarn`/`npm` resolve like the user's terminal.
-    // `detached` puts the child in its own process group so `killTree` can
-    // signal the whole tree (the shell + the real dev-server grandchild).
-    child = spawn(cmd, {
-      cwd,
-      env: { ...process.env, FORCE_COLOR: "0" },
-      shell: true,
-      detached: true,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-
-    child.stdout?.on("data", (chunk: Buffer) => {
-      pushLog(chunk, process.stdout);
-      // A printed "Local: http://…:<port>/" line means the dev server booted
-      // cleanly. Use it to (a) discover the port when it wasn't forced, and
-      // (b) reset the failure backoff + summary — regardless of whether the
-      // port was forced (`--target-port`), so a clean boot always restarts the
-      // backoff sequence, not just when we're sniffing the port.
-      for (const line of chunk.toString().split("\n")) {
-        const found = parseTargetPort(line);
-        if (!found) continue;
-        if (options.targetPort === undefined) {
-          if (port !== found) log(`discovered target port ${found}`);
-          port = found;
-        }
-        restartCount = 0;
-        failureSummaryLogged = false;
-      }
-    });
-    child.stderr?.on("data", (chunk: Buffer) =>
-      pushLog(chunk, process.stderr, true),
-    );
-
-    child.on("exit", (code, signal) => {
-      lastExitReason = `target dev server exited (code ${code ?? "null"}${signal ? `, signal ${signal}` : ""})`;
-      child = undefined;
-      if (shuttingDown) return;
-      const delay = restartDelayMs(restartCount);
-      restartCount += 1;
-      // Escalating noise control: after N consecutive failures with no clean
-      // boot in between, collapse to a single summary line; keep retrying
-      // forever (the client explicitly valued auto-recovery).
-      if (restartCount >= FAILURE_SUMMARY_THRESHOLD) {
-        if (!failureSummaryLogged) {
-          failureSummaryLogged = true;
-          log(
-            `target failing repeatedly: ${lastStderrLine || lastExitReason} — retrying every ${Math.round(RESTART_BACKOFF_MS[RESTART_BACKOFF_MS.length - 1] / 1000)}s`,
-          );
-        }
-      } else {
-        log(lastExitReason);
-      }
-      restartTimer = setTimeout(spawnChild, delay);
-    });
-
-    child.on("error", (err) => {
-      lastExitReason = `failed to spawn target: ${err.message}`;
-      log(lastExitReason);
-    });
-  }
-
-  function start() {
-    if (!attached) spawnChild();
-  }
-
-  /** Respawn the target dev cmd in a new directory (worktree retarget). */
-  function retarget(nextCwd: string) {
-    if (attached) {
-      throw new Error(
-        "[designbook dev] cannot retarget in --target-url (attach) mode.",
-      );
-    }
-    log(`retargeting to ${nextCwd}`);
-    cwd = nextCwd;
-    restartCount = 0;
-    failureSummaryLogged = false;
-    if (options.targetPort !== undefined) port = options.targetPort;
-    if (restartTimer) clearTimeout(restartTimer);
-    if (child?.pid) {
-      const dying = child;
-      child = undefined;
-      // Respawn once the old tree is fully gone (freeing the port), so the new
-      // dev server can bind it. The auto-restart exit handler is removed first.
-      dying.removeAllListeners("exit");
-      dying.once("exit", () => spawnChild());
-      killTree(dying, "SIGTERM");
-      setTimeout(() => {
-        if (dying.exitCode === null && dying.signalCode === null) {
-          killTree(dying, "SIGKILL");
-        }
-      }, 4000);
-    } else {
-      spawnChild();
-    }
-  }
-
-  function getTarget(): { host: string; port: number } | undefined {
-    return port ? { host, port } : undefined;
-  }
-
-  /** Best-effort HTTP probe: resolves true if the target answers at all. */
-  function probe(): Promise<boolean> {
-    const target = getTarget();
-    if (!target) return Promise.resolve(false);
-    return new Promise((resolvePromise) => {
-      const req = httpRequest(
-        {
-          host: target.host,
-          port: target.port,
-          method: "HEAD",
-          path: "/",
-          timeout: 1500,
-        },
-        (res) => {
-          res.resume();
-          resolvePromise(true);
-        },
-      );
-      req.on("error", () => resolvePromise(false));
-      req.on("timeout", () => {
-        req.destroy();
-        resolvePromise(false);
-      });
-      req.end();
-    });
-  }
-
-  function shutdown() {
-    shuttingDown = true;
-    if (restartTimer) clearTimeout(restartTimer);
-    const dying = child;
-    if (dying?.pid) {
-      killTree(dying, "SIGTERM");
-      setTimeout(() => {
-        if (dying.exitCode === null && dying.signalCode === null) {
-          killTree(dying, "SIGKILL");
-        }
-      }, 4000);
-    }
-  }
-
-  return {
-    start,
-    retarget,
-    getTarget,
-    probe,
-    shutdown,
-    get logLines() {
-      return ring.slice(-40);
-    },
-    get lastExitReason() {
-      return lastExitReason;
-    },
-    get isAttached() {
-      return attached;
-    },
-  };
-}
-
-async function git(repoRoot: string, args: string[]): Promise<string> {
-  const { stdout } = await execFileAsync("git", args, { cwd: repoRoot });
-  return stdout.trim();
-}
-
-/** Resolve (creating if needed) a worktree dir for a branch — proxy retarget. */
-async function resolveWorktreePath(
-  repoRoot: string,
-  branch: string,
-): Promise<string> {
-  const listing = await git(repoRoot, ["worktree", "list", "--porcelain"]);
-  let current: { path: string; branch?: string } | undefined;
-  const entries: Array<{ path: string; branch?: string }> = [];
-  for (const line of listing.split("\n")) {
-    if (line.startsWith("worktree ")) {
-      current = { path: line.slice("worktree ".length) };
-      entries.push(current);
-    } else if (line.startsWith("branch refs/heads/") && current) {
-      current.branch = line.slice("branch refs/heads/".length);
-    }
-  }
-  const existing = entries.find((e) => e.branch === branch);
-  if (existing) return existing.path;
-
-  const base = repoRoot.replace(/\/+$/, "");
-  const name = base.slice(base.lastIndexOf("/") + 1);
-  const dir = `${base.slice(0, base.lastIndexOf("/"))}/${name}-worktrees/${branch.replace(/[^a-zA-Z0-9._-]+/g, "--")}`;
-  const branches = await git(repoRoot, ["branch", "--list", branch]);
-  await git(
-    repoRoot,
-    branches
-      ? ["worktree", "add", dir, branch]
-      : ["worktree", "add", dir, "-b", branch],
-  );
-  return dir;
-}
-
 async function startSidecar(options: SidecarOptions) {
   const { configPath, projectRoot, port, host, open, debug } = options;
 
@@ -438,6 +146,42 @@ async function startSidecar(options: SidecarOptions) {
     log,
   });
 
+  // --- Worktree switching (the C3.2 branch seam) ----------------------------
+  // One branch is VIEWED at a time: the proxy serves that branch's dev server
+  // and the browser never leaves the stable origin. Other branches' dev
+  // servers stay warm in the target pool (LRU-capped) and their agent
+  // sessions keep running (per-branch-sessions spec). `activeBranch` is
+  // undefined until the first switch (= the projectRoot checkout's branch).
+  const baseTargetCwd = options.targetCwd ?? projectRoot;
+  let activeBranch: string | undefined;
+  // Worktree ROOT of the active branch (undefined = primary checkout) — the
+  // per-branch agent session's cwd. Distinct from the target cwd, which in a
+  // monorepo is the app package INSIDE the worktree.
+  let activeWorktreeRoot: string | undefined;
+
+  /**
+   * Ensure the branch's worktree exists + is installed, then respawn the
+   * target dev command in the matching app dir inside it. Switching back to
+   * the primary branch resolves to the primary checkout and respawns there.
+   * Returns the new target cwd.
+   */
+  async function switchToBranch(
+    branch: string,
+    notify: (message: string) => void,
+  ): Promise<string> {
+    if (target.isAttached) {
+      throw new Error(
+        "designbook dev is attached to --target-url, so it cannot switch worktrees. Run without --target-url to let it spawn (and retarget) the dev server.",
+      );
+    }
+    const worktreePath = await prepareWorktree(projectRoot, branch, notify);
+    const nextCwd = worktreeTargetCwd(projectRoot, baseTargetCwd, worktreePath);
+    target.retarget(nextCwd, branch);
+    activeBranch = branch;
+    activeWorktreeRoot = worktreePath;
+    return nextCwd;
+  }
+
   const api = createApi({
     configPath,
     projectRoot,
@@ -445,6 +189,18 @@ async function startSidecar(options: SidecarOptions) {
     debug,
     readOnly: options.readOnly,
     trustProject: options.trustProject,
+    worktreeProxy: {
+      activeBranch: () => activeBranch,
+      activeWorktreeRoot: () => activeWorktreeRoot,
+      switchTo: async (branch, notify) => {
+        await switchToBranch(branch, notify);
+      },
+      // Worktree removed (reconcile): its warm dev server goes too. The
+      // session dispose happens api-side; the figma bridge stays global.
+      stopBranch: (branch) => {
+        target.stopBranch(branch);
+      },
+    },
   });
 
   // The direct api origin: plain `/api/*` is designbook's here (unproxied), for
@@ -519,16 +275,31 @@ async function startSidecar(options: SidecarOptions) {
     try {
       let nextCwd: string | undefined;
       if (typeof payload.cwd === "string" && payload.cwd) {
+        if (!existsSync(payload.cwd)) {
+          response.writeHead(400, { "content-type": "application/json" });
+          response.end(
+            JSON.stringify({ error: `cwd does not exist: ${payload.cwd}` }),
+          );
+          return;
+        }
+        target.retarget(payload.cwd);
+        // A raw-cwd retarget bypasses branch tracking — active branch
+        // unknown, so the agent resolves to the PRIMARY session (documented
+        // degrade; the {branch} form is the supported path).
+        activeBranch = undefined;
+        activeWorktreeRoot = undefined;
         nextCwd = payload.cwd;
       } else if (typeof payload.branch === "string" && payload.branch) {
-        nextCwd = await resolveWorktreePath(projectRoot, payload.branch);
+        // Same seam as POST /api/worktrees: create + install the worktree
+        // (a fresh one can't boot its dev server without an install), then
+        // retarget into its app dir.
+        nextCwd = await switchToBranch(payload.branch, log);
       }
-      if (!nextCwd || !existsSync(nextCwd)) {
+      if (!nextCwd) {
         response.writeHead(400, { "content-type": "application/json" });
         response.end(JSON.stringify({ error: "cwd or branch is required." }));
         return;
       }
-      target.retarget(nextCwd);
       response.writeHead(200, { "content-type": "application/json" });
       response.end(JSON.stringify({ ok: true, cwd: nextCwd }));
     } catch (error) {
@@ -618,10 +389,20 @@ async function startSidecar(options: SidecarOptions) {
       `http://${request.headers.host ?? "localhost"}`,
     );
 
-    // Ours is namespaced on the proxy origin (/__designbook/api/figma-bridge);
-    // every other upgrade — their HMR socket, app websockets — is proxied.
-    if (url.pathname === "/__designbook/api/figma-bridge") {
-      api.handleFigmaUpgrade(request, socket, head);
+    // Ours are namespaced on the proxy origin (/__designbook/api/bridge/<name>
+    // or a legacy alias like /__designbook/api/figma-bridge), routed through
+    // the integration registry; every other upgrade — their HMR socket, app
+    // websockets, even a plain /api/bridge/* the TARGET app might serve — is
+    // proxied.
+    if (
+      url.pathname.startsWith("/__designbook/") &&
+      api.handleBridgeUpgrade(
+        stripDesignbookNamespace(url.pathname),
+        request,
+        socket,
+        head,
+      )
+    ) {
       return;
     }
 
@@ -663,11 +444,16 @@ async function startSidecar(options: SidecarOptions) {
       request.url ?? "/",
       `http://${request.headers.host ?? "localhost"}`,
     );
+    // Plain and namespaced bridge paths are both designbook's on the direct
+    // api origin (it proxies nothing).
     if (
-      url.pathname === "/api/figma-bridge" ||
-      url.pathname === "/__designbook/api/figma-bridge"
+      api.handleBridgeUpgrade(
+        stripDesignbookNamespace(url.pathname),
+        request,
+        socket,
+        head,
+      )
     ) {
-      api.handleFigmaUpgrade(request, socket, head);
       return;
     }
     socket.destroy();

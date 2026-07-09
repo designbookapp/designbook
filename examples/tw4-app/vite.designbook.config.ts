@@ -1,6 +1,13 @@
-import { defineConfig, type ConfigEnv, type UserConfig } from "vite";
+import {
+  defineConfig,
+  type ConfigEnv,
+  type UserConfig,
+  type UserConfigExport,
+} from "vite";
 import { designbookPlugin } from "@designbookapp/designbook";
-import baseConfig from "./vite.config";
+import baseConfigImport from "./vite.config";
+
+const baseConfig = baseConfigImport as UserConfigExport;
 
 // App's real vite config + designbookPlugin(): injects the designbook toolbar +
 // workbench overlay into the app's own dev server (shadow-isolated chrome).
