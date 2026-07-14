@@ -192,31 +192,17 @@ function mergeScripts(
   return { pkg: { ...pkg, scripts }, added, skipped, conflicts };
 }
 
-/** Render the designbook.config.tsx template. */
+/** Render the designbook.config.tsx template (slim shape — config-slim spec). */
 function renderConfigTemplate(opts: { title: string; glob: string }): string {
-  return `import { defineConfig, fromGlob } from "@designbookapp/designbook/config";
+  void opts.glob; // components are auto-indexed; no glob registration needed
+  return `import { defineConfig } from "@designbookapp/designbook/config";
 
+// Components are auto-indexed from your source exports — nothing to register,
+// and previews run in your live app (its own providers and data). Add as needed:
+//   adapters: [themeAdapter({...})],  // from "@designbookapp/designbook/adapters"
+//   i18n: { resources: import.meta.glob("./locales/*/app.json", { eager: true, import: "default" }) },
 export default defineConfig({
   title: ${JSON.stringify(opts.title)},
-
-  sets: [
-    {
-      id: "primitives",
-      title: "Primitives",
-      // Register every component file lazily. Each cell code-splits through the
-      // app's own bundler, so one broken component is one red cell; the code
-      // panel's source path comes free from the glob key (nothing to register
-      // manually for these entries).
-      components: fromGlob(import.meta.glob(${JSON.stringify(opts.glob)})),
-      // overrides: {
-      //   Button: {
-      //     matrixAxes: [
-      //       { name: "Variant", values: ["primary", "secondary", "danger"] },
-      //     ],
-      //   },
-      // },
-    },
-  ],
 });
 `;
 }
@@ -410,13 +396,9 @@ async function runInit(argv: string[]): Promise<void> {
       PREFERRED_DIRS,
     );
     if (!componentsDir) {
-      // Nothing detected — fall back to src/components and warn.
+      // Nothing detected — harmless: components are auto-indexed from the
+      // app's module graph, the dir only informs the init report.
       componentsDir = "src/components";
-      console.warn(
-        "designbook init: no component directory detected; defaulting the " +
-          "glob to ../src/components/*.tsx — edit .designbook/config.tsx to point " +
-          "at your components (paths are relative to .designbook/).",
-      );
     }
   }
 
@@ -503,7 +485,7 @@ async function runInit(argv: string[]): Promise<void> {
   lines.push("designbook init");
   lines.push(`  package manager   ${pm}`);
   lines.push(`  vite config       ${viteConfigName}`);
-  lines.push(`  components dir     ${componentsDir}  (glob ${glob})`);
+  lines.push(`  components dir     ${componentsDir}  (auto-indexed)`);
   lines.push("");
   if (written.length > 0) lines.push(`  wrote   ${written.join(", ")}`);
   if (skippedFiles.length > 0) {
@@ -524,10 +506,6 @@ async function runInit(argv: string[]): Promise<void> {
   }
   lines.push(`  ${step}. Install designbook as a dev dependency if you haven't:`);
   lines.push(`       ${pmAddDev(pm)} @designbookapp/designbook`);
-  step += 1;
-  lines.push(`  ${step}. Point the glob in .designbook/config.tsx at your components`);
-  lines.push(`     (currently ${glob}; it is relative to .designbook/, so paths`);
-  lines.push(`     start with ../ — in a monorepo, ../../<pkg>/... reaches a workspace lib).`);
   step += 1;
   lines.push(`  ${step}. Start the workbench:`);
   lines.push(`       ${run} design`);

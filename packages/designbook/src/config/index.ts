@@ -1,23 +1,34 @@
 /**
  * Public config API for designbook consumers. A repo describes what the
- * workbench shows in a `designbook.config.tsx` file:
+ * workbench needs in a `designbook.config.tsx` file — the SLIM shape
+ * (config-slim spec): adapters and a title. Component registration is GONE:
+ * the vite plugin auto-indexes every exported component in the app's module
+ * graph, so hit-testing, drill, labels and code attribution are derived, not
+ * configured. Previews run in the live app, which brings its own providers
+ * and data.
  *
  * ```tsx
  * import { defineConfig } from "@designbookapp/designbook/config";
+ * import { themeAdapter } from "@designbookapp/designbook/adapters";
  *
  * export default defineConfig({
  *   title: "My app",
- *   sets: [{ id: "product", title: "Product", components: { ... } }],
- *   sourceModules: import.meta.glob("./src/composite/** /*.tsx", { eager: true }),
+ *   adapters: [themeAdapter({ source: "./src/index.css", modes: { light: ":root" } })],
  *   i18n: {
  *     resources: import.meta.glob("./locales/*\/app.json", { eager: true, import: "default" }),
  *   },
  * });
  * ```
  *
- * Everything filesystem-shaped (locale files, component source modules) is
- * evaluated inside the config file via `import.meta.glob`, relative to it —
- * designbook itself contains no repo-specific paths.
+ * Everything filesystem-shaped (locale files) is evaluated inside the config
+ * file via `import.meta.glob`, relative to it — designbook itself contains no
+ * repo-specific paths.
+ *
+ * DEPRECATED (still honored this release, ignored in the next): `sets`,
+ * `flows`, `sourceModules`, `providers`, `datasets`, and the `fromGlob`
+ * helper. The workbench warns loudly (console + one-time UI notice) when a
+ * config still passes them. `useDataset`/`DatasetContext` remain supported as
+ * an APP-side API — provide the context in your app (see the demo's App.tsx).
  */
 
 import { createContext, useContext, type ComponentType, type ReactNode } from "react";
@@ -225,15 +236,34 @@ type PageTextConfig = {
 type DesignbookConfig = {
   /** Shown in the browser tab and workbench chrome. */
   title?: string;
-  sets: ComponentSet[];
+  /**
+   * @deprecated Components are auto-indexed from your source exports
+   * (config-slim); `sets` still works this release and is ignored in the next.
+   */
+  sets?: ComponentSet[];
+  /**
+   * @deprecated The flows page is retired; `flows` still works this release
+   * and is ignored in the next.
+   */
   flows?: Flow[];
+  /**
+   * @deprecated The component canvas is retired; previews run in your live
+   * app. `useDataset()`/`DatasetContext` remain supported app-side — provide
+   * the context in your app instead.
+   */
   datasets?: PreviewDataset[];
   /**
    * `import.meta.glob` result (eager) over component source files, used to
    * attribute canvas components back to their file for agent prompts.
+   * @deprecated Source attribution comes from the auto export index
+   * (config-slim); still works this release, ignored in the next.
    */
   sourceModules?: Record<string, unknown>;
-  /** Context providers wrapped around everything rendered on the canvas. */
+  /**
+   * @deprecated The component canvas is retired; previews run in your live
+   * app, which brings its own providers (adapter Providers come from the
+   * adapters themselves). Still accepted this release, ignored in the next.
+   */
   providers?: ComponentType<{ children: ReactNode }>[];
   i18n?: I18nConfig;
   /**
@@ -388,17 +418,28 @@ function parentDir(path: string): string {
   return parts.length >= 2 ? parts[parts.length - 2] : "";
 }
 
+let fromGlobDeprecationWarned = false;
+
 /**
  * Turn a non-eager `import.meta.glob` record into a `components` record of lazy
  * sources. Keys derive from the file basename (PascalCase); collisions across
  * directories are disambiguated by prefixing the parent-dir name, then a numeric
  * suffix as a last resort — deterministic. `*.{test,spec,stories}.*` are excluded
  * by default.
+ *
+ * @deprecated `sets`/`fromGlob` registration is replaced by the auto export
+ * index (config-slim). Still works this release; ignored in the next.
  */
 function fromGlob(
   glob: GlobRecord,
   options: FromGlobOptions = {},
 ): Record<string, LazyComponentSource> {
+  if (!fromGlobDeprecationWarned) {
+    fromGlobDeprecationWarned = true;
+    console.warn(
+      "[designbook] fromGlob() is deprecated: components are auto-indexed from your source exports — remove `sets`/`fromGlob` from designbook.config. Still honored this release.",
+    );
+  }
   const include = toMatchers(options.include);
   const exclude = toMatchers(options.exclude);
 

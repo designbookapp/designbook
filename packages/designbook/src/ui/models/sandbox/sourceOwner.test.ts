@@ -1,16 +1,17 @@
 import { describe, expect, it } from "vitest";
 import type { Fiber } from "@designbook-ui/previewHost";
-import { sourceOwnerFromFiber } from "./sourceOwner";
+import { componentUsageFromFiber, sourceOwnerFromFiber } from "./sourceOwner";
 
 /** Minimal fiber fixture — the walker reads type/_debugOwner/return only. */
 function fiberOf(
   type: unknown,
-  links: { owner?: Fiber; parent?: Fiber } = {},
+  links: { owner?: Fiber; parent?: Fiber; props?: Record<string, unknown> } = {},
 ): Fiber {
   return {
     type,
     _debugOwner: links.owner ?? null,
     return: links.parent ?? null,
+    memoizedProps: links.props ?? {},
   } as unknown as Fiber;
 }
 
@@ -102,5 +103,71 @@ describe("sourceOwnerFromFiber (sandbox owner fallback)", () => {
     const el = fiberOf("div", { owner: b });
     const owner = sourceOwnerFromFiber(el, () => undefined);
     expect(owner?.ownerNames).toEqual(["App", "HomePage"]);
+  });
+});
+
+describe("componentUsageFromFiber (props panel usage-site fallback)", () => {
+  function ProductCard() {
+    return null;
+  }
+
+  it("walks the SELECTED component's own fiber (not a DOM leaf) to its named-owner chain", () => {
+    const app = fiberOf(App);
+    const page = fiberOf(HomePage, { owner: app });
+    const card = fiberOf(ProductCard, {
+      owner: page,
+      props: { variant: "hero" },
+    });
+    const usage = componentUsageFromFiber(card, "ProductCard");
+    expect(usage).toEqual({
+      ownerNames: ["HomePage", "App"],
+      name: "ProductCard",
+    });
+  });
+
+  it("carries the className visible on the usage element's memoizedProps", () => {
+    const page = fiberOf(HomePage);
+    const card = fiberOf(ProductCard, {
+      owner: page,
+      props: { className: "hero-card" },
+    });
+    const usage = componentUsageFromFiber(card, "ProductCard");
+    expect(usage).toEqual({
+      ownerNames: ["HomePage"],
+      name: "ProductCard",
+      className: "hero-card",
+    });
+  });
+
+  it("omits className when absent or non-string", () => {
+    const page = fiberOf(HomePage);
+    const card = fiberOf(ProductCard, { owner: page, props: { className: 42 } });
+    expect(componentUsageFromFiber(card, "ProductCard")).toEqual({
+      ownerNames: ["HomePage"],
+      name: "ProductCard",
+    });
+  });
+
+  it("is undefined when no named owner exists on the chain (nothing for the server ladder)", () => {
+    const orphan = fiberOf(ProductCard);
+    expect(componentUsageFromFiber(orphan, "ProductCard")).toBeUndefined();
+  });
+
+  it("map-rendered siblings derive the SAME usage descriptor — one call site for every instance", () => {
+    // Three .map()-rendered instances share one _debugOwner (the JSX that
+    // wrote the .map() call), so they resolve to the same owner chain — the
+    // server locates ONE `<ProductCard>` usage element and an edit through
+    // any instance lands there (docs/specs/props-panel.md: no per-instance
+    // splitting).
+    const page = fiberOf(HomePage);
+    const cardA = fiberOf(ProductCard, { owner: page, props: { key: "a" } });
+    const cardB = fiberOf(ProductCard, { owner: page, props: { key: "b" } });
+    const cardC = fiberOf(ProductCard, { owner: page, props: { key: "c" } });
+    const usages = [cardA, cardB, cardC].map((fiber) =>
+      componentUsageFromFiber(fiber, "ProductCard"),
+    );
+    expect(usages[0]).toEqual({ ownerNames: ["HomePage"], name: "ProductCard" });
+    expect(usages[1]).toEqual(usages[0]);
+    expect(usages[2]).toEqual(usages[0]);
   });
 });

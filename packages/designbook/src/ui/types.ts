@@ -16,6 +16,24 @@ type CanvasCodeTarget = {
   className?: string;
 };
 
+/**
+ * A COMPONENT hit's derived usage descriptor for the props panel, populated
+ * when no `codeTarget` resolved — the outermost/undrilled selection
+ * (`codeTargets.ts` intentionally leaves it undefined there so the code panel
+ * shows the component's own definition, not a usage line). `ownerNames`
+ * (nearest first) lets the server resolve the owning FILE via the same
+ * bounded export scan the sandbox source-owner fallback uses, since no file
+ * is resolvable client-side for a fresh click. `name` is the selected
+ * component's own JSX name (the tag to locate in that file); `className` is
+ * the value visible on the usage element via the fiber's `memoizedProps`,
+ * when cheaply available.
+ */
+type CanvasUsageTarget = {
+  ownerNames: string[];
+  name: string;
+  className?: string;
+};
+
 /** A canvas selection handed to the chat as prompt context. */
 type CanvasNodeSelection = {
   description: string;
@@ -31,6 +49,10 @@ type CanvasNodeSelection = {
    * component): highlights the element's JSX usage line in its owner's file
    * instead of the plain definition line. */
   codeTarget?: CanvasCodeTarget;
+  /** Fallback usage-site descriptor for a COMPONENT hit with no `codeTarget`
+   * (see `CanvasUsageTarget`) — lets the props panel still write to the JSX
+   * call site via server-side owner-file resolution. */
+  usage?: CanvasUsageTarget;
 };
 
-export type { CanvasCodeTarget, CanvasNodeSelection };
+export type { CanvasCodeTarget, CanvasNodeSelection, CanvasUsageTarget };

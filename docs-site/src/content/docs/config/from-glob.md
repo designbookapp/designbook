@@ -6,7 +6,7 @@ description: Register a whole directory of components lazily with fromGlob — p
 `fromGlob` turns an `import.meta.glob` of a directory into a set's `components` record — one
 lazily-loaded, code-split entry per file. It's the recommended way to register components:
 each entry is compiled on demand by your app's own bundler, so **one broken component is one
-red cell**, never a dead workbench. Import it (and `lazy`) from `@designbookapp/designbook/config`.
+red cell**, never a dead full view. Import it (and `lazy`) from `@designbookapp/designbook/config`.
 
 ## Usage
 
@@ -106,7 +106,7 @@ export default defineConfig({
 
 Static registration still works — `components: { Button, Card }` from explicit imports — but it
 gives up per-cell fault isolation: a **broken static import fails the whole config module**, taking
-the workbench down instead of showing one red cell. Static (and demo-wrapper) entries also need
+the whole thing down instead of showing one red cell. Static (and demo-wrapper) entries also need
 `sourceModules` for the code panel to attribute them to a file:
 
 ```tsx
@@ -123,7 +123,7 @@ file with `overrides[Name].sourcePath`. See [Component sets & overrides](/config
 Because each `fromGlob` / `lazy` entry is a separate dynamic import wrapped in its own error
 boundary, a component that fails to compile or throws while rendering degrades to a single **red
 cell** — showing the component name, the first line of the error, and a **retry** button — while
-every other component on the canvas keeps rendering. This is the main reason to prefer lazy
+every other component keeps rendering. This is the main reason to prefer lazy
 registration over static imports.
 
 ## See also

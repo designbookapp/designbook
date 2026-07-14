@@ -178,6 +178,79 @@ function matchFiber(
 }
 
 /**
+ * Trim the OUTERMOST tail of a chain: export-index entries that are page
+ * SHELLS (App, route pages, layouts, pass-through providers) are not useful
+ * fresh-click boundaries — with the auto export index EVERY in-repo component
+ * is registered, so without this a fresh click would always select the app
+ * root. Pops index-origin shell levels (and the DOM levels above the new
+ * outermost) while at least one component level remains, so a genuinely
+ * full-page component that is the only boundary under the pointer stays
+ * selectable. Config-`sets` entries are never trimmed (registering a
+ * full-page component explicitly is a choice). Trimmed shells stay reachable
+ * through the raw-DOM source-owner fallback, exactly like unregistered page
+ * shells before the index.
+ */
+function trimPageSizedTail(
+  entries: FiberChainEntry[],
+  isShell: (entry: ComponentFiberEntry) => boolean,
+): FiberChainEntry[] {
+  const out = [...entries];
+  let componentCount = out.filter((entry) => entry.kind === "component").length;
+  while (componentCount > 1) {
+    const last = out[out.length - 1];
+    if (!last || last.kind !== "component") break;
+    if (last.entry.origin !== "index") break;
+    if (!isShell(last)) break;
+    out.pop();
+    componentCount -= 1;
+    // DOM levels above the new outermost component are scaffolding now.
+    while (out.length > 0 && out[out.length - 1].kind === "dom") out.pop();
+  }
+  return out;
+}
+
+/** Pass-through wrappers: never content, shells at ANY size (a provider
+ * wrapping one card is exactly as un-selectable as one wrapping the app). */
+const PASS_THROUGH_NAME_PATTERN = /(Provider|Providers|Router|Routes)$/;
+
+/** Names that read as page scaffolding: the app root and the
+ * Page/Layout/Shell/Screen naming conventions. Geometry alone cannot identify
+ * these — a centered `max-width` page container covers only ~half the body
+ * width — so the convention carries a mild geometric sanity check (most of
+ * the page's height) instead of the strict whole-body one. */
+const PAGE_NAME_PATTERN = /(^App$)|(^Root$)|(Page|Layout|Shell|Screen)$/;
+
+/**
+ * Whether a component chain level is a page shell: a pass-through wrapper by
+ * name; or a page-named component spanning ≥60% of the OWNING document's
+ * body height (iframe-correct — rects and body share a document); or — any
+ * name — a box covering ~the entire body (≥97% both dimensions).
+ */
+function isPageShellFiber(entry: ComponentFiberEntry): boolean {
+  try {
+    const name = entry.name || entry.entry.name;
+    if (PASS_THROUGH_NAME_PATTERN.test(name)) return true;
+    const anchor = getAnchorElement(entry.fiber);
+    const doc = anchor?.ownerDocument;
+    const body = doc?.body ?? doc?.documentElement;
+    if (!body) return false;
+    const bodyRect = body.getBoundingClientRect();
+    if (bodyRect.width === 0 || bodyRect.height === 0) return false;
+    const union = unionRects(getFiberRects(entry.fiber));
+    if (!union) return false;
+    if (PAGE_NAME_PATTERN.test(name) && union.height >= bodyRect.height * 0.6) {
+      return true;
+    }
+    return (
+      union.width >= bodyRect.width * 0.97 &&
+      union.height >= bodyRect.height * 0.97
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Interleaved hit-test chain under `el`, innermost → outermost. Walks
  * `fiber.return` from the pointer target up to the *outermost* registered
  * component, collecting BOTH registered components and the plain host DOM
@@ -185,7 +258,8 @@ function matchFiber(
  * one drillable step (see drillSelection.ts). Fibers that are invisible to
  * designers (unregistered function components, providers, fragments, text) are
  * skipped. Host elements ABOVE the outermost registered component (canvas
- * scaffolding) are excluded.
+ * scaffolding) are excluded, as are page-shell-sized export-index components
+ * (see trimPageSizedTail).
  *
  * Consecutive matches against the same registry entry (a memo/forwardRef
  * wrapper whose unwrapped type matches the fiber right below it) are deduped
@@ -249,7 +323,7 @@ function hitTestChain(
     // else: unregistered component / provider / fragment / text — skip.
   }
 
-  return entries;
+  return trimPageSizedTail(entries, isPageShellFiber);
 }
 
 /**
@@ -501,6 +575,7 @@ export {
   hitTestChain,
   isElementNode,
   matchFiber,
+  trimPageSizedTail,
   unionRects,
   unwrapType,
 };

@@ -3,11 +3,13 @@ title: Theme adapter
 description: Edit design tokens from your CSS or JSON — light/dark modes, preset variants, and Figma variable sync.
 ---
 
-The **theme adapter** teaches the canvas to read and edit your design tokens — colours,
+The **theme adapter** teaches designbook to read and edit your design tokens — colours,
 dimensions, numbers — straight from your app's stylesheet (or a JSON tokens object). It
-contributes a **mode** dimension (light/dark, …), a **Theme** tab of editable token fields,
-and drives the canvas light/dark preview. Edits are optimistic (the canvas recolours
-immediately) and persist to your source, rolling back on failure.
+contributes a **mode** dimension (light/dark, …) shown in the top bar, a **Theme** tab of
+editable token fields in the left panel, and drives your running app's light/dark class
+directly (see [Reaching your running app](/adapters/overview/#reaching-your-running-app)).
+Field edits are optimistic (the control updates immediately, rolling back on failure) and
+persist to your source; your dev server's own hot reload reflects them in your running app.
 
 Import it from `@designbookapp/designbook/adapters`:
 
@@ -50,8 +52,8 @@ The control type per token is inferred (colour / number / text) and can be overr
 ## Variants
 
 Variants are **editable preset themes** layered over the base `source` as sparse per-mode
-token overrides. Each variant becomes a value of a `variant` context dimension (the canvas
-"Theme" selector); the Theme tab shows and edits the **active** variant, resolving each token
+token overrides. Each variant becomes a value of a `variant` context dimension (a picker in the
+top bar); the Theme tab shows and edits the **active** variant, resolving each token
 to its override or the base value. The base is the built-in `"default"` variant.
 
 ```tsx

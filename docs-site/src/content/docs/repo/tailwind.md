@@ -32,7 +32,7 @@ Tailwind v3 repos are bridged automatically. When Designbook detects an installe
 it loads your `tailwind.config.{js,cjs,mjs,ts}` (presets included) through **your own**
 `tailwindcss/resolveConfig`, and generates a v4 `@theme` mapping from the resolved
 `theme.colors`, `borderRadius`, and `fontFamily` — so semantic utilities like `bg-primary`
-(→ `hsl(var(--primary))`) work on the canvas without any configuration. Your `darkMode`
+(→ `hsl(var(--primary))`) work in designbook without any configuration. Your `darkMode`
 setting (`class` or a custom selector) is carried over as a dark variant.
 
 Two details to know:

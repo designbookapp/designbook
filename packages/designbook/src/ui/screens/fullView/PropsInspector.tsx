@@ -169,7 +169,12 @@ function PropsInspector({
   }, [isComponent, schemaFile, schemaExport]);
 
   const usageSite = selection?.codeTarget;
-  const canWrite = Boolean(usageSite?.file);
+  // A COMPONENT hit with no client-resolved codeTarget (the outermost/
+  // undrilled selection) can still write through its derived `usage`
+  // descriptor — the server resolves the owning file from `ownerNames` (see
+  // CanvasUsageTarget / handlePropsEdit).
+  const usageFallback = selection?.usage;
+  const canWrite = Boolean(usageSite?.file) || Boolean(usageFallback);
 
   const rows = useMemo(
     () => buildRows(schema, runtimeProps, edits),
@@ -198,7 +203,7 @@ function PropsInspector({
 
   /** Queue a debounced usage-site write for one prop. */
   function scheduleWrite(row: Row, nextValue: unknown) {
-    if (!canWrite || !usageSite?.file) return;
+    if (!canWrite) return;
     const timers = debouncers.current;
     const existing = timers.get(row.name);
     if (existing) clearTimeout(existing);
@@ -209,11 +214,26 @@ function PropsInspector({
         String(nextValue) === row.defaultValue;
       const kind: string =
         row.kind === "enum" ? "enum" : row.kind;
+      // A resolved codeTarget carries its own file; a component-hit usage
+      // fallback has none — the server resolves it from ownerNames instead
+      // (see handlePropsEdit).
+      const target =
+        usageSite?.file
+          ? {
+              file: usageSite.file,
+              ownerExportName: usageSite.ownerExportName,
+              elementName: usageSite.name,
+              ...(usageSite.className ? { className: usageSite.className } : {}),
+            }
+          : {
+              ownerNames: usageFallback!.ownerNames,
+              elementName: usageFallback!.name,
+              ...(usageFallback!.className
+                ? { className: usageFallback!.className }
+                : {}),
+            };
       const body = {
-        file: usageSite.file,
-        ownerExportName: usageSite.ownerExportName,
-        elementName: usageSite.name,
-        ...(usageSite.className ? { className: usageSite.className } : {}),
+        ...target,
         prop: row.name,
         kind,
         ...(isDefault ? { reset: true } : { value: nextValue }),

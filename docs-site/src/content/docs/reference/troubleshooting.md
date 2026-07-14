@@ -37,28 +37,27 @@ or one that matches the sidecar's own origin) rather than disabling the check.
 
 ## i18n text tool shows everything as "hardcoded"
 
-The i18next text adapter attributes a rendered string back to its catalog key by sharing one
-`react-i18next` instance with your app; if that sharing breaks, every string silently falls
-back to "hardcoded literal" instead of erroring. Since **≥ 0.2.4** `designbookPlugin()`
-auto-injects the dedupe this needs (`resolve.dedupe: ["react-i18next", "i18next"]`), so this is
-now rare. If you still see it:
+Attribution doesn't depend on sharing an i18next/react-i18next instance with your app —
+`designbookPlugin()` rewrites your app's own `t(...)` call sites at dev-transform time so their
+resolved strings carry an invisible marker back to designbook, regardless of which instance
+rendered them. The rewrite is a **syntactic** match on the call site (a bare `t`, `i18n.t(...)`,
+or Lingui's `i18n._(...)`), not a runtime check, so it fails silently rather than erroring: a
+translation call under a different name, or a shape it doesn't recognize, just falls back to
+"hardcoded literal" (routed to chat rather than inline/keyed editing). If a screen you know is
+translated shows nothing editable, check that its call sites match one of those three shapes.
 
-- Confirm `i18next` and `react-i18next` are **direct, resolvable dependencies of the app**
-  (not just of a nested library) — the adapter can't instrument what it can't resolve.
-- Check for a hand-rolled `resolve.dedupe` or alias that shadows the plugin's automatic one.
-
-See [Text & i18next](/adapters/text/#injected-mode-sharing-one-react-i18next-instance) for the
-full explanation.
+See [Marker attribution](/adapters/text/#marker-attribution) for the full explanation.
 
 ## React deduplication (invalid hook call, context misses)
 
-Designbook's workbench bundle always externalizes `react`/`react-dom` rather than shipping its
-own copies, so in injected mode the workbench and your app **must resolve to one React
-instance** — selection/text-tool hit-testing walks your app's own fiber tree, and adapter
-providers (like the i18next adapter's `I18nextProvider`) need to share context with your
-components. A monorepo with a nested or mismatched `react`/`react-dom` range gives the
-workbench a second copy, which shows up as "Invalid hook call" errors, a provider's context
-reading as its default value, or the select/text tool silently missing a registered component.
+Your running app renders inside the full view's **own frame** — a separate module graph from
+designbook's own chrome — so selection and the text tool never need a shared React instance
+with your app; they walk fiber/DOM data that's readable regardless of which `react` copy
+produced it. Where a shared instance still matters: **variant previews** (the cards a
+[chat](/concepts/agent/) turn generates, and the [sandbox canvas](/concepts/changesets/)) render
+your actual components directly inside designbook's own React tree, composed with a generated
+wrapper. A monorepo with a nested or mismatched `react`/`react-dom` range there shows up as
+"Invalid hook call" errors or a variant that silently fails to render.
 
 Fix by adding both to `resolve.dedupe` in the app's **own** Vite config (the one
 `vite.designbook.config.ts` wraps — dedupe has to apply before `designbookPlugin` is even in
@@ -72,13 +71,12 @@ export default defineConfig({
 ```
 
 If a workspace package pins an incompatible `react` range, align it with the app's before
-retrying. (This is unrelated to the automatic `react-i18next`/`i18next` dedupe above — React
-itself still needs an explicit dedupe in your own config.)
+retrying. (This is unrelated to the automatic `react-i18next`/`i18next` dedupe above.)
 
 ## Dependency-optimize churn after config edits {#dependency-optimize-churn}
 
 After editing your config (adding components, changing globs), you may see Vite re-run its
-dependency optimizer and the canvas reload a few times as it settles. If it seems stuck in a
+dependency optimizer and full view reload a few times as it settles. If it seems stuck in a
 reload loop, **restart the server** — a fresh start re-optimizes cleanly and cures it.
 
 ## Server-only imports kill the optimizer
@@ -89,7 +87,7 @@ can knock out Vite's dependency optimizer.
 
 Fixes:
 
-- **Scope your registrations and globs** to the components you actually put on the canvas —
+- **Scope your registrations and globs** to the components you actually register —
   don't glob your whole `src`. Narrow globs are the main defense.
 - **Exclude the offending dependency** from optimization via a
   [sidecar](/repo/compat/#the-designbookvite-sidecar)'s `optimizeDeps.exclude`.
@@ -98,7 +96,7 @@ Fixes:
 ## Components render empty {#components-render-empty}
 
 A component that renders as an empty box is almost always **missing context or props**. The
-component needs a provider or data it isn't getting on the canvas.
+component needs a provider or data it isn't getting when designbook renders it.
 
 Fixes:
 
@@ -120,20 +118,24 @@ looks unstyled:
   [Tailwind](/repo/tailwind/#tailwind-v3).
 - **CSS-variable scoping** — if your styles depend on a scoping class that your app's root sets
   (for example a theme class), make sure whatever provides it is in `providers` or a wrapper so
-  the canvas subtree gets it too. Design tokens declared on `:root` are forwarded into the
+  the rendered subtree gets it too. Design tokens declared on `:root` are forwarded into the
   shadow-DOM cells automatically — if they aren't applying, update designbook.
 - **Workspace-lib utilities never generated (Tailwind).** If components from a workspace
   package render with the right classes in markup but no CSS, the host's Tailwind isn't
   *scanning* that package's source. In Tailwind v4, add an `@source` to the css entry that
   imports your theme, e.g. `@source "../../packages/ui/src";` (path relative to the css file),
   so v4 generates the utilities those components use.
-- **Generated variants render unstyled (Tailwind, plugin/injected mode).** Design variations
-  and sandbox variants are written into `.designbook/variations/` and `.designbook/sandbox/`,
-  which may sit outside your Tailwind v4 source scope — utilities only a variant uses then
-  emit no CSS and the variant renders collapsed. Host mode handles this automatically; in
-  plugin (injected) mode add two lines to the css entry that imports your theme:
-  `@source "./.designbook/variations"; @source "./.designbook/sandbox";` (paths relative to
-  the css file).
+- **Generated variants render unstyled (Tailwind).** Design variations, the sandbox, and
+  changeset layers write generated files into `.designbook/variations/`, `.designbook/sandbox/`,
+  and `.designbook/changesets/` respectively — none of these are `src`, so they can sit outside
+  your Tailwind v4 source scope, and utilities only a generated file uses then emit no CSS (the
+  variant/variation renders collapsed). This is handled **automatically in both host mode and
+  injected mode** — a dev-time transform appends `@source` for all three directories to your
+  Tailwind v4 entry css, so there's normally nothing to configure. If you still see it, the
+  auto-detection likely isn't recognizing your entry css: it looks for a literal
+  `@import "tailwindcss";`, so a differently-shaped import needs the three lines added by hand:
+  `@source "./.designbook/variations"; @source "./.designbook/sandbox"; @source
+  "./.designbook/changesets";` (paths relative to the css file).
 
 ## Test / story files loaded unexpectedly
 
@@ -150,8 +152,8 @@ errors also surface in the chat panel.
 
 ## A text or token edit doesn't show up live
 
-Designbook's write-back endpoints are designed to update the canvas without a page reload —
-if an edit seems to land on disk but the canvas or live app doesn't reflect it, restart the
+Designbook's write-back endpoints are designed to update full view without a page reload —
+if an edit seems to land on disk but full view or the live app doesn't reflect it, restart the
 dev server before assuming the write failed; this is usually a transform-cache staleness issue
 in Vite rather than a lost write, and a fresh start picks up the change. This applies in both
 injected and host mode, since both serve your components through a Vite dev server underneath.

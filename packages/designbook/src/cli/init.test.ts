@@ -182,14 +182,15 @@ describe("mergeScripts", () => {
 });
 
 describe("renderConfigTemplate", () => {
-  it("uses fromGlob with the detected glob and OMITS sourceModules", () => {
+  it("renders the SLIM config (no sets/fromGlob/sourceModules — config-slim)", () => {
     const out = renderConfigTemplate({
       title: "Client App",
       glob: "./src/components/*.tsx",
     });
-    expect(out).toContain('import { defineConfig, fromGlob } from "@designbookapp/designbook/config"');
+    expect(out).toContain('import { defineConfig } from "@designbookapp/designbook/config"');
     expect(out).toContain('title: "Client App"');
-    expect(out).toContain('fromGlob(import.meta.glob("./src/components/*.tsx"))');
+    expect(out).not.toContain("fromGlob");
+    expect(out).not.toContain("sets:");
     expect(out).not.toContain("sourceModules");
   });
 });
@@ -210,7 +211,7 @@ describe("runInit → .designbook/ template", () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it("writes .designbook/config.tsx with a ../-relative glob", async () => {
+  it("writes the slim .designbook/config.tsx (auto-indexed components)", async () => {
     writeFileSync(
       join(dir, "package.json"),
       JSON.stringify({ name: "web", scripts: { dev: "vite" } }, null, 2),
@@ -225,9 +226,8 @@ describe("runInit → .designbook/ template", () => {
     await runInit([]);
 
     const config = readFileSync(join(dir, ".designbook/config.tsx"), "utf8");
-    expect(config).toContain(
-      'fromGlob(import.meta.glob("../src/components/*.tsx"))',
-    );
+    expect(config).toContain('title: "Web"');
+    expect(config).not.toContain("fromGlob");
 
     const variant = readFileSync(join(dir, "vite.designbook.config.ts"), "utf8");
     expect(variant).toContain('config: "./.designbook/config.tsx"');

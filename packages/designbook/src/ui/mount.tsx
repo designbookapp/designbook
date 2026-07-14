@@ -209,17 +209,23 @@ function mountWorkbench(options: MountWorkbenchOptions): WorkbenchHandle {
       { loadAdapterRuntime },
       { initUiIntegrations },
       { registerBuiltinSelectionContributors },
+      { startExportIndexSync },
     ] = await Promise.all([
       import("./WorkbenchRoot"),
       import("./adapterRuntime"),
       import("./integrations"),
       import("./models/selectionContext/contributors"),
+      import("./models/catalog/componentRegistry"),
     ]);
     if (disposed) return;
 
     // Built-in selection-context contributors register FIRST so the Info
     // panel/prompt order is core → built-ins → integrations/adapters.
     registerBuiltinSelectionContributors();
+
+    // Auto export index (config-slim): begin syncing repo component exports
+    // into the registry so hit-testing works with no `sets` configured.
+    startExportIndexSync();
 
     // Adapter runtime + integration ui halves (the left-rail plugin tabs)
     // resolve together before first render.

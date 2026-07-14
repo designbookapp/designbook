@@ -1,10 +1,18 @@
 ---
-title: Component sets & registration
-description: Registering components bare vs. through demo wrappers, and pointing the code panel at the right source file.
+title: Component registration
+description: Registering components gives designbook names, source attribution, and a props schema surface — selection and editing work even on unregistered elements.
 ---
 
-A **component set** is a group of components shown together on the canvas. It's the primary
-unit of registration:
+:::caution[Deprecated]
+Component registration via `sets` is **deprecated**: designbook now detects
+your app's exported components automatically (the vite plugin's export
+index) — selection, drill, labels, and code attribution need no config.
+Existing `sets` keep working with a one-time warning this release and win
+name collisions while present; removal comes next release.
+:::
+
+
+A **component set** groups components under a shared name in your config:
 
 ```tsx
 type ComponentSet = {
@@ -17,8 +25,7 @@ type ComponentSet = {
 };
 ```
 
-Every key of `components` becomes a canvas entry labelled by that key. You can spread whole
-modules in — a common pattern for a family of small atoms:
+You can spread whole modules in — a common pattern for a family of small atoms:
 
 ```tsx
 import * as productAtoms from "./src/composite/product/atoms";
@@ -27,51 +34,59 @@ import * as productAtoms from "./src/composite/product/atoms";
   id: "product",
   title: "Shop/Product",
   components: { ProductCard, ProductDetailSection, ...productAtoms },
-  wrapper: ProductWrapper,
 }
 ```
 
-## Bare vs. wrapper registration
+## What registration buys you
 
-There are two ways to register a component, and the choice matters:
+Designbook doesn't need a component registered to let you select, edit text on, or chat about
+it — [selection](/concepts/selection/) works on anything rendered in your app. What
+registration adds:
 
-**Bare** — register the component directly. This works for self-contained components that
-render meaningfully with no props and no surrounding context (primitives like `Button`,
-`Badge`, `Card`). It's the simplest thing and a good default for a design-system's atoms.
+- **A friendly name.** A registered instance shows its `components` key (e.g. `ProductCard`)
+  instead of a DOM tag/class; the set's `/`-delimited `title` groups related entries.
+- **Reliable source attribution.** Registration plus [`sourceModules`](/concepts/code-panel/)
+  is the most direct path from a selection to the file the [Code panel](/concepts/code-panel/)
+  opens and [chat](/concepts/agent/) references — an unregistered element still resolves to a
+  source file via a best-effort scan, but a registered one is exact.
+- **A props schema.** The [Props panel](/concepts/props-panel/) can extract typed controls for
+  any component whose source and export it can resolve — registration is the simplest way to
+  guarantee that resolution.
 
-**Demo wrapper** — for anything that needs context or realistic data, write a small wrapper
-that provides it and renders `children`, and attach it as the set `wrapper`. The wrapper
-reads the active dataset with `useDataset()`, so one wrapper serves the whole set and the
-data stays swappable from the toolbar.
+## Bare registration
 
-**We recommend wrappers** for any component that depends on providers or data. A component
-that renders empty on the canvas is almost always missing context — a wrapper is the fix. See
-[Troubleshooting](/reference/troubleshooting/#components-render-empty).
+The common case is simple: register the component directly. Nothing else is required.
 
 ```tsx
-function ProductWrapper({ children }: { children: ReactNode }) {
-  const { data } = useDataset<DemoData>();
-  return (
-    <ProductProvider product={data.products[0]} currency={data.currency}>
-      {children}
-    </ProductProvider>
-  );
+{
+  id: "primitives",
+  title: "Primitives",
+  components: { Button, Badge, Card, CardHeader, CardContent },
 }
 ```
 
-Providers that should wrap **everything** on the canvas (a theme provider, an i18n provider)
-belong in the top-level `providers` field instead of in per-set wrappers.
+## `wrapper` and `datasets`
 
-## The code panel and `sourcePath`
+`ComponentSet.wrapper` and top-level `datasets` are still part of the config type — a wrapper
+provides context via `useDataset()` around a set's members, and `datasets` are named
+sample-data bundles a wrapper can read. They come from an earlier version of designbook that
+rendered registered components inside its own workbench canvas (`wrapper` supplied the context
+that canvas needed). In the current full view, everything you select renders inside your
+**real, running app** — with its real providers already in place — so designbook no longer
+needs a config-level wrapper to construct that context; it's not required for selection,
+Props/Code panels, or chat to work. Existing `wrapper`/`datasets` config still type-checks and
+is harmless to keep, but don't reach for it to make a component "show up" anywhere — there's no
+canvas surface left that consumes it.
 
-Designbook attributes each canvas entry back to its source file so the [code
-panel](/concepts/code-panel/) can show real source and the agent can reference it. That
-attribution comes from `sourceModules` (a glob of your component files).
+Providers that apply app-wide belong in your app's own provider tree (your real
+`main.tsx`/`App.tsx`), not in designbook's config.
 
-There's one case the glob can't resolve: when the thing you registered is a **local demo
-wrapper** defined *inside the config file* rather than a component imported from your source
-tree. Since the wrapper lives in the config, `sourceModules` has no file to attribute it to.
-Point the code panel at the real file with `overrides.sourcePath`:
+## The Code panel and `sourcePath`
+
+There's one case source attribution can't resolve on its own: when the thing you registered is
+a **local demo wrapper** defined *inside the config file* rather than a component imported from
+your source tree. Since the wrapper lives in the config, `sourceModules` has no file to
+attribute it to. Point the Code panel at the real file with `overrides.sourcePath`:
 
 ```tsx
 {
@@ -80,13 +95,13 @@ Point the code panel at the real file with `overrides.sourcePath`:
   components: { ProductCardDemo },
   overrides: {
     ProductCardDemo: {
-      // Repo-relative source file for the code panel.
+      // Repo-relative source file for the Code panel.
       sourcePath: "./src/composite/product/variants/Card.tsx",
     },
   },
 }
 ```
 
-`sourcePath` is repo-relative. It only applies to the code panel's source attribution; see
-[Component sets & overrides](/config/sets-and-overrides/) for the other override fields
-(`matrixAxes`, `editableProps`, `previewWidth`, `label`).
+`sourcePath` is repo-relative. It only affects source attribution; see [Component sets &
+overrides](/config/sets-and-overrides/) for the other override fields (`editableProps`,
+`previewWidth`, `label`).

@@ -53,6 +53,7 @@ import {
   truncateDiagnostic,
 } from "./variations.ts";
 import { dataFormatFor } from "./dataClassify.ts";
+import { lookupExportFiles } from "./exportIndexStore.ts";
 import {
   GitRequiredError,
   altIdOfRef,
@@ -1032,8 +1033,10 @@ async function listAppSourceFiles(appRootAbs: string): Promise<string[]> {
 
 /**
  * Per-generation resolver: exported symbol name → repo-relative source file.
- * Tries the capture's attributed file first, then a deterministic scan of the
- * app source (sorted, bounded). Every read is cached for the generation.
+ * Ladder (config-slim spec): the capture's attributed file first, then the
+ * plugin-pushed EXPORT INDEX (verified against the real file — the index may
+ * lag a rename), then the deterministic bounded scan of the app source as the
+ * fallback for unindexed files. Every read is cached for the generation.
  */
 function makeExportResolver(repoRoot: string, appDir: string) {
   let filesPromise: Promise<string[]> | undefined;
@@ -1054,6 +1057,23 @@ function makeExportResolver(repoRoot: string, appDir: string) {
     if (hintFile && containedPath(repoRoot, hintFile)) {
       const hinted = await sourceOf(hintFile);
       if (hinted && moduleExportsName(hinted, name)) return hintFile;
+    }
+    // INDEX LOOKUP: candidates already sorted; multiple files exporting the
+    // same name is legitimate (barrels, twins) — verify each against the real
+    // source and take the first that still exports the name, logging the
+    // ambiguity so it is diagnosable.
+    const indexed = lookupExportFiles(name);
+    if (indexed.length > 1) {
+      console.warn(
+        `[designbook] export index: "${name}" is exported from ${indexed.length} files (${indexed
+          .slice(0, 4)
+          .join(", ")}${indexed.length > 4 ? ", …" : ""}); picking the first that verifies.`,
+      );
+    }
+    for (const repoRel of indexed.slice(0, 8)) {
+      if (!containedPath(repoRoot, repoRel)) continue;
+      const source = await sourceOf(repoRel);
+      if (source && moduleExportsName(source, name)) return repoRel;
     }
     filesPromise ??= listAppSourceFiles(
       appDir ? join(repoRoot, appDir) : repoRoot,

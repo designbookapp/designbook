@@ -43,6 +43,10 @@ import { discardChange, fileDiff, listChanges } from "./gitChanges.ts";
 import { rebaseConfigDir, resolveActiveRepoRoot } from "./activeRepoRoot.ts";
 import { READ_ONLY_BLOCKED_ROUTES } from "./readOnlyRoutes.ts";
 import {
+  applyExportIndex,
+  exportIndexSnapshot,
+} from "./exportIndexStore.ts";
+import {
   resolveContainedPath,
   resolveSourceFile as resolveSourceFileIn,
 } from "./sourcePaths.ts";
@@ -1187,7 +1191,8 @@ function createApi(options: ApiOptions) {
   }
 
   type PropsEditPayload = {
-    /** Repo-relative owner file (the selection's codeTarget.file). */
+    /** Repo-relative owner file (the selection's codeTarget.file). Absent
+     * for a component-hit usage fallback — `ownerNames` resolves it. */
     file?: unknown;
     /** Owner component export name (codeTarget.ownerExportName). */
     ownerExportName?: unknown;
@@ -1205,6 +1210,11 @@ function createApi(options: ApiOptions) {
     value?: unknown;
     /** Remove the attribute (reset-to-default). */
     reset?: unknown;
+    /** Named-owner chain, nearest first (CanvasUsageTarget.ownerNames) — a
+     * component-hit usage fallback when `file` isn't client-resolved. Server
+     * resolves the owning file via the same bounded export scan
+     * `/api/sandbox/source-owner` uses (`resolveOwnerSource`). */
+    ownerNames?: unknown;
   };
 
   /** Build the typed JSX value from the payload kind + value. */
@@ -1241,13 +1251,26 @@ function createApi(options: ApiOptions) {
     response: ServerResponse,
   ) {
     const payload = await readJsonBody<PropsEditPayload>(request);
-    const file = typeof payload.file === "string" ? payload.file : "";
+    let file = typeof payload.file === "string" ? payload.file : "";
     const elementName =
       typeof payload.elementName === "string" ? payload.elementName : "";
     const prop = typeof payload.prop === "string" ? payload.prop : "";
-    if (!file || !elementName || !prop) {
+    // Component-hit usage fallback (CanvasUsageTarget): the client has no
+    // client-resolvable file for a fresh/undrilled component selection —
+    // resolve the owning file server-side from the named-owner chain, the
+    // same bounded export scan `/api/sandbox/source-owner` uses.
+    const ownerNames = Array.isArray(payload.ownerNames)
+      ? payload.ownerNames.filter(
+          (name): name is string => typeof name === "string" && name !== "",
+        )
+      : undefined;
+    if (!elementName || !prop) {
+      sendJson(response, 400, { error: "elementName and prop are required." });
+      return;
+    }
+    if (!file && (!ownerNames || ownerNames.length === 0)) {
       sendJson(response, 400, {
-        error: "file, elementName, and prop are required.",
+        error: "file (or ownerNames) is required.",
       });
       return;
     }
@@ -1263,6 +1286,23 @@ function createApi(options: ApiOptions) {
     }
 
     const repoRoot = activeRepoRoot();
+    let resolvedOwnerExportName: string | undefined;
+    if (!file && ownerNames) {
+      const { resolved } = await resolveOwnerSource({
+        repoRoot,
+        appDir: activeAppDir(repoRoot),
+        names: ownerNames,
+      });
+      if (!resolved) {
+        sendJson(response, 200, {
+          ok: false,
+          unresolvable: `no owning file found for <${elementName}> among ${ownerNames.join(", ")}.`,
+        });
+        return;
+      }
+      file = resolved.file;
+      resolvedOwnerExportName = resolved.exportName;
+    }
     const sourceFile = resolveSourceFile(file, repoRoot);
     if (!sourceFile || !/\.(tsx|jsx)$/.test(sourceFile)) {
       sendJson(response, 400, {
@@ -1277,9 +1317,9 @@ function createApi(options: ApiOptions) {
     }
 
     const ownerExportName =
-      typeof payload.ownerExportName === "string"
+      (typeof payload.ownerExportName === "string"
         ? payload.ownerExportName
-        : undefined;
+        : undefined) ?? resolvedOwnerExportName;
     const className =
       typeof payload.className === "string" ? payload.className : undefined;
     const usageLine =
@@ -3877,6 +3917,23 @@ function createApi(options: ApiOptions) {
         // which paths designbook just wrote, so it can drop the matching hot
         // update in the target app's separate Vite process.
         sendJson(response, 200, { writes: recentWrites.list() });
+        return;
+      }
+
+      if (url.pathname === "/api/export-index" && request.method === "GET") {
+        // Auto export index (config-slim): the workbench synthesizes registry
+        // entries for hit-testing/drill from this snapshot.
+        sendJson(response, 200, exportIndexSnapshot());
+        return;
+      }
+
+      if (url.pathname === "/api/export-index" && request.method === "POST") {
+        // Full-snapshot push from the injected vite plugin (its transform hook
+        // scans the client graph). Memory-only; the response's epoch lets the
+        // plugin detect sidecar restarts and re-push.
+        const payload = await readJsonBody<unknown>(request);
+        const version = applyExportIndex(payload);
+        sendJson(response, 200, { ok: true, version, epoch: exportIndexSnapshot().epoch });
         return;
       }
 

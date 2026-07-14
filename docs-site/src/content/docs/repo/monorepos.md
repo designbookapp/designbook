@@ -41,8 +41,8 @@ A common monorepo situation: a workspace dependency's `package.json` `exports` /
 at a built `dist/` that isn't built during development. Designbook handles this — for a direct
 workspace dependency of your config's package, if the entry points at an unbuilt `dist/` but a
 `src/` exists, Designbook **synthesizes source aliases** so imports resolve to the package's
-`src/` instead. That means you don't have to pre-build internal packages just to see them on
-the canvas.
+`src/` instead. That means you don't have to pre-build internal packages just to see them
+render.
 
 Sass `preprocessorOptions` / CSS-modules config from those workspace deps is also merged in
 (closest-to-config wins), so shared Sass setup carries over.

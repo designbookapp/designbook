@@ -1,31 +1,41 @@
 ---
 title: Selection & drill-in
-description: Selecting components on the canvas, drilling into nested elements, and where selection feeds the code panel and agent.
+description: Selecting anything in your running app, drilling into nested elements, and where selection feeds the Props panel, Code panel, and chat.
 ---
 
-Selecting something on the canvas is how you tell the rest of the workbench what you want to
-work on — it drives the [code panel](/concepts/code-panel/), the adapter tabs, and the
-context you hand to the [Pi agent](/concepts/agent/).
+Selecting something in your running app is how you tell the rest of the [full
+view](/concepts/full-view/) what you want to work on — it drives the [Props
+panel](/concepts/props-panel/), the [Code panel](/concepts/code-panel/), and the context you
+hand [chat](/concepts/agent/).
 
 ## Activate the select tool
 
-Selection is a **tool**, and it is not the default. Activate the **select tool from the
-bottom toolbar** before clicking a component — otherwise a click pans or interacts with the
-canvas rather than selecting. This trips people up the first time, so it's worth calling out:
-if clicking a component does nothing, check that the select tool is active in the bottom
-toolbar.
+Selection is a **tool**, and it isn't the default. Activate **Select** from the **footer tool
+picker** before clicking — otherwise a click just interacts with your app normally (clicks a
+button, follows a link) rather than selecting it. This trips people up the first time: if
+clicking something does nothing but what it normally does, check that Select is active in the
+footer.
+
+Selection works on **anything rendered in your app**, not just components you registered in
+your config. A registered component shows its registered name; anything else shows its tag and
+class/id (for example `div.card`). Either way, the Code panel can usually still find its
+source — see [Component registration](/concepts/component-sets/) for what registration
+actually buys you.
 
 ## Drill-in
 
-With the select tool active, clicking selects a component entry. Clicking again drills into
-the element under the cursor — down through the rendered DOM of that component — so you can
-target a specific heading, button, or text node rather than the whole component. This is what
-lets the text tool attribute an individual rendered string back to its source (see [Text
-& i18next](/adapters/text/)), and what gives the agent a precise anchor for edits.
+With Select active, clicking selects the outermost thing under the cursor. Clicking again
+drills into the element under the cursor — down through the rendered DOM — so you can target a
+specific heading, button, or text node rather than the whole component. This is what lets the
+[text tool](/adapters/text/) attribute an individual rendered string back to its source, and
+what gives chat a precise anchor for an edit ("make **this** bigger" instead of "make the
+button bigger").
 
 ## What selection feeds
 
-- **The code panel** shows the source file attributed to the current selection.
-- **Adapter tabs** (Theme, Flags, …) act on the active context, which selection and the
-  toolbar dimensions together determine.
-- **The agent** can reference the selected component and element when you describe a change.
+- **The Props panel** shows the selected instance's live values, upgrading to typed controls
+  once its schema resolves.
+- **The Code panel** shows the source file attributed to the selection, highlighting the usage
+  line for a drilled-in element.
+- **Chat** carries the selection along as a pin chip on your next message, so the agent knows
+  exactly what "this" refers to.

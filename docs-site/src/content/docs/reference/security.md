@@ -52,15 +52,16 @@ network**, not just your own machine, while it's on.
 
 ## `--read-only`
 
-Run the workbench and the agent without any write access to the repo:
+Run designbook and the agent without any write access to the repo:
 
 ```bash
 designbook dev --read-only
 ```
 
 This restricts the Pi agent to read-only tools (`read`, `grep`, `find`, `ls` — no `bash`,
-`edit`, or `write`), and the write-back endpoints the canvas itself uses (token edits, text
-edits, flag edits, and raw file writes) all reject with `403` instead of touching disk. Use it
+`edit`, or `write`), and the write-back endpoints full view itself uses (token edits, text
+edits, flag edits, props edits, and direct code edits) all reject with `403` instead of touching
+disk. Use it
 when you want to browse, chat, and get Pi's proposed changes described in the chat panel
 without anything landing on disk automatically.
 
@@ -85,7 +86,7 @@ unaffected by this flag either way — they load regardless of trust, matching P
 ## API keys
 
 The Pi chat tab needs `ANTHROPIC_API_KEY` (or another supported provider key) in the shell
-that runs `designbook`/`designbook dev` — the rest of the workbench (canvas, code panel, deep
+that runs `designbook`/`designbook dev` — the rest of designbook (full view, code panel, deep
 links) works without it. Authentication otherwise follows the Pi SDK's standard flow
 (`~/.pi/agent/auth.json`, shared with any other Pi/`pi` CLI usage on the machine).
 

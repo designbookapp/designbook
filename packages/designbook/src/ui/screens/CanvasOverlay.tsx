@@ -38,10 +38,13 @@ import {
   registryByName,
   type RegistryEntry,
 } from "@designbook-ui/models/catalog/componentRegistry";
-import { resolveSourceOwner } from "@designbook-ui/models/sandbox/sourceOwner";
+import {
+  componentUsageFromFiber,
+  resolveSourceOwner,
+} from "@designbook-ui/models/sandbox/sourceOwner";
 import { useStageTransform, useStageElement } from "./stageContext";
 import { CanvasContextMenu } from "@designbook-ui/components/CanvasContextMenu";
-import type { CanvasCodeTarget } from "@designbook-ui/types";
+import type { CanvasCodeTarget, CanvasUsageTarget } from "@designbook-ui/types";
 
 type OverlayRect = {
   x: number;
@@ -91,6 +94,9 @@ type CanvasHitResult = {
   /** Named-owner chain, nearest first (source owners only — the pin route
    * resolves the file from it when sourcePath is ""). */
   ownerNames?: string[];
+  /** Fallback usage-site descriptor for a component hit with no `codeTarget`
+   * (the outermost/undrilled selection) — see `CanvasUsageTarget`. */
+  usage?: CanvasUsageTarget;
 };
 
 /** Figma-style css-ish label for a hit: the component label, or
@@ -375,6 +381,15 @@ function CanvasOverlay({
     if (!union) return undefined;
 
     const rect = screenRectToStageRect(toScreenBox(union), stageEl, transform);
+    // No codeTarget (the outermost/undrilled hit, by codeTargets.ts design —
+    // see its docstring) — derive a usage-site fallback from the component's
+    // OWN fiber so the props panel can still locate the JSX call site above
+    // it, resolved server-side (no client-visible sourcePath for a fresh
+    // click). Deferred to the innermost-drilled level's codeTarget when one
+    // exists — DOM-hit / drilled behavior is unaffected.
+    const usage = item.codeTarget
+      ? undefined
+      : componentUsageFromFiber(item.fiber, item.name);
     return {
       entry: item.entry,
       rect,
@@ -382,6 +397,7 @@ function CanvasOverlay({
       kind: "component",
       name: item.name,
       codeTarget: item.codeTarget,
+      ...(usage ? { usage } : {}),
       anchor: getAnchorElement(item.fiber),
       fiber: item.fiber,
     };

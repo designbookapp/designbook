@@ -15,7 +15,7 @@ there it can contribute a text claim, context dimensions, editable-field tabs, a
 
 ## Text adapters
 
-The narrowest useful adapter is a **text adapter** — it participates in the canvas text tool's
+The narrowest useful adapter is a **text adapter** — it participates in the text tool's
 claim chain. The `TextAdapter` interface is exported from `@designbookapp/designbook/config`:
 
 ```ts
@@ -34,39 +34,42 @@ Adapters run as an ordered chain and the first non-null `resolveText` claim wins
 `previewText` must be synchronous and side-effect-free (it runs on hover). See `TextAdapter`,
 `TextClaim`, and `TextNodeHit` in the exported types from `@designbookapp/designbook/config`.
 
-Adapters are **browser code** — the config runs in the workbench — so they may touch the DOM
-and `fetch` the Designbook API (the write-back endpoints like `/api/json`, `/api/style`,
-`/api/i18n`, `/api/file`).
+Adapters are **browser code** — your config runs in the browser, as part of designbook — so
+they may touch the DOM and `fetch` the designbook API (the write-back endpoints like
+`/api/json`, `/api/style`, `/api/i18n`, `/api/file`).
 
 ## The fuller adapter surface
 
 Beyond claiming text, an adapter's `setup()` can return an `AdapterSetup` that contributes:
 
-- **`dimensions`** — context selectors shown in the canvas settings bar. Each has an `id`,
+- **`dimensions`** — context selectors shown in the top bar. Each has an `id`,
   `label`, `options`, and `defaultValue`; ids are namespaced `"<adapter.name>:<id>"`
   automatically.
-- **`tabs`** — side-rail tabs of editable fields. A tab's `fields(ctx)` returns fields
+- **`tabs`** — left-panel tabs of editable fields. A tab's `fields(ctx)` returns fields
   (`control` of `color`/`number`/`text`/`toggle`/`select`) each with a `value` and a `save`
   callback; it may also expose `actions` (like the theme adapter's Figma sync).
-- **`Provider`** — a component wrapped around the canvas preview, receiving `{ context,
-  values, children }`.
+- **`Provider`** — a component wrapped around the rest of the designbook chrome, receiving
+  `{ context, values, children }`. It does **not** wrap your running app — see [Reaching your
+  running app](/adapters/overview/#reaching-your-running-app).
 - **`getValues(ctx)`** — resolves the adapter's per-context values (fed to the provider).
 - **`onContextChange(id, value, context)`** — called when one of the adapter's dimensions
   changes.
 
-The runtime aggregates every adapter's contributions into the canvas: context is a flat map of
-namespaced id → value, persisted to `localStorage`; `notifyValuesChanged()` re-renders after
-an optimistic field edit. This is exactly how the [theme](/adapters/theme/) and
+The runtime aggregates every adapter's contributions: context is a flat map of namespaced
+id → value, persisted to `localStorage`; `notifyValuesChanged()` re-renders the chrome after an
+optimistic field edit. This is exactly how the [theme](/adapters/theme/) and
 [flags](/adapters/flags/) adapters work — read their source as reference implementations.
 
-### Scope your `Provider` through context, not the DOM
+### Making an edit show up in the running app
 
-A `Provider` mounts inside the workbench's shadow root, but canvas cells render as slotted
-light DOM — React context crosses that boundary fine, but a wrapper `data-*` attribute plus
-descendant CSS does not, because the light DOM elements aren't CSS descendants of where they're
-slotted. Feed values through context (a hook your cells call), not attributes your cells'
-ancestor CSS depends on. See the [flags adapter's gotcha](/adapters/flags/#your-provider) for
-the concrete failure mode and the `FlagScope` pattern that fixes it.
+Your app renders live in its own frame, not inside designbook's own React tree, so a
+`Provider`/context is not what gets a dimension change or a field edit in front of the user.
+The pattern the shipped adapters use: persist the edit to a real source file your app already
+reads (`POST /api/json`, `/api/style`, `/api/i18n`, …) and let your dev server's normal hot
+reload pick it up. If a dimension needs to feel instant rather than wait on the file-watcher
+round trip, mirror it directly into the frame — see how the theme adapter's `mode` dimension
+and the i18next adapter's `locale` dimension do this in
+[Reaching your running app](/adapters/overview/#reaching-your-running-app).
 
 :::note
 Because this surface is unstable, the safest pattern today is to model your adapter closely on

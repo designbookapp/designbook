@@ -1,6 +1,6 @@
 # designbook
 
-**One product. Every angle.** Your React app as a set of live, editable views — theme tokens, copy in every locale, feature flags, code — plus an embedded Pi coding agent that lands every edit as a real change in the repo. designbook **injects into your app's own Vite dev server**.
+**One product. Every angle.** Your React app as a full view with live, editable surfaces — theme tokens, copy in every locale, feature flags, code — plus an embedded Pi coding agent, with real conversation memory, that lands every edit as a real change in the repo. designbook **injects into your app's own Vite dev server**.
 
 ```bash
 npm i -D @designbookapp/designbook
@@ -14,21 +14,23 @@ and `npx designbook` use the bare `designbook` command.
 
 ## How it works (injected mode)
 
-designbook adds a toolbar pill to your app that expands into a full-screen workbench overlay (in a shadow DOM, so it can't collide with your styles). Your components render through your app's own bundler, styling, and providers.
+designbook adds a pencil button to your app that opens a full-screen overlay (in a shadow DOM, so it can't collide with your styles): chat/changes/tokens/flags on the left, your app live in the center, props/code on the right. Your components render through your app's own bundler, styling, and providers.
 
-- **`designbookPlugin()`** — added to a `vite.designbook.config.ts` variant that wraps your real Vite config (see the "Injected mode" docs page). Injects the toolbar/overlay client and exposes your `designbook.config.tsx` to it. Options: `config` (path, auto-discovered), `serverUrl` (sidecar origin, must match the sidecar `--port`), `autoExpand`.
-- **`designbook dev`** — the `design` script. Runs the API/agent/figma sidecar on a stable port and proxies your app's own dev server behind it, so one URL survives restarts; a recovery page (with Pi chat) shows when the target is down; `/__designbook/...` deep links open a specific component.
+- **`designbookPlugin()`** — added to a `vite.designbook.config.ts` variant that wraps your real Vite config (see the "Injected mode" docs page). Injects the boot/overlay client and exposes your `designbook.config.tsx` to it. Options: `config` (path, auto-discovered), `serverUrl` (sidecar origin, must match the sidecar `--port`), `autoExpand`.
+- **`designbook dev`** — the `design` script. Runs the API/agent/figma sidecar on a stable port and proxies your app's own dev server behind it, so one URL survives restarts; a recovery page (with Pi chat) shows when the target is down; a `/__designbook/...` deep link opens the full view.
 - **`designbook init`** — scaffolds `designbook.config.tsx` (a `fromGlob` registry), the `vite.designbook.config.<ext>` variant (wrap-your-config + checker-drop), and the `design` / `dev:designbook` scripts. Detects your Vite config, package manager, and components dir. Idempotent; `--force` to overwrite. Flags: `--dir`, `--app-port`, `--port`.
+- **`designbook login`** — runs the bundled Pi CLI's interactive `/login` flow to connect a model for chat.
+- **`designbook pi [args…]`** — passthrough escape hatch to the bundled Pi coding-agent CLI.
 
 ## Host mode
 
-No runnable app (a standalone component library)? `designbook [config]` serves the workbench from designbook's own embedded Vite dev server instead of injecting into yours.
+No runnable app (a standalone component library)? `designbook [config]` serves the full view from designbook's own embedded Vite dev server instead of injecting into yours.
 
 ```bash
 designbook [config] [--port 8787] [--host localhost] [--root <repo root>] [--no-open] [--debug]
 ```
 
-`config` defaults to `designbook.config.{tsx,ts,jsx,js}` in the current directory. The project root (the repo the agent works in) defaults to the git root above the config file; override with `--root` or `DESIGNBOOK_CWD`. On start the workbench opens in your browser (disable with `--no-open`; auto-disabled for non-TTY/CI and worktree-spawned instances). In host mode the CLI starts a single Node server: `/api/*` for the Pi agent, everything else an embedded Vite dev server compiling the workbench UI and your components via the `virtual:designbook-config` module.
+`config` defaults to `designbook.config.{tsx,ts,jsx,js}` in the current directory. The project root (the repo the agent works in) defaults to the git root above the config file; override with `--root` or `DESIGNBOOK_CWD`. On start designbook opens in your browser (disable with `--no-open`; auto-disabled for non-TTY/CI and worktree-spawned instances). In host mode the CLI starts a single Node server: `/api/*` for the Pi agent, everything else an embedded Vite dev server compiling the full-view UI and your components via the `virtual:designbook-config` module.
 
 ## Config API
 
@@ -43,7 +45,7 @@ export default defineConfig({
       id: "primitives",
       title: "Primitives",
       // Recommended: one lazy, code-split entry per file. One broken component
-      // is one red cell; source attribution comes free from the glob key.
+      // fails on its own; source attribution comes free from the glob key.
       components: fromGlob(import.meta.glob("./src/components/*.tsx")),
     },
     {
@@ -69,7 +71,7 @@ See `src/config/index.ts` for the full types.
 
 ## Text adapters
 
-The canvas text tool attributes each rendered string back to its source of truth and saves edits there. That mapping is pluggable: a **text adapter** claims a text node, provides its display value + editor capabilities, and knows how to persist a change. Adapters run as an ordered chain — the first to claim a node wins.
+The text tool (in the full view's footer tool picker) attributes each rendered string back to its source of truth and saves edits there. That mapping is pluggable: a **text adapter** claims a text node, provides its display value + editor capabilities, and knows how to persist a change. Adapters run as an ordered chain — the first to claim a node wins.
 
 Two adapters ship in `@designbookapp/designbook/adapters`:
 
@@ -106,19 +108,19 @@ type TextAdapter = {
 };
 ```
 
-Adapters are browser code (the config runs in the workbench), so they may touch the DOM and `fetch` the designbook API. See `TextAdapter`, `TextClaim`, and `TextNodeHit` in `src/config/adapters.ts`.
+Adapters are browser code (the config runs inside designbook), so they may touch the DOM and `fetch` the designbook API. See `TextAdapter`, `TextClaim`, and `TextNodeHit` in `src/config/adapters.ts`.
 
 Agent/API errors always log to the terminal; `--debug` (or `DESIGNBOOK_DEBUG=1`) additionally logs every API request and Pi agent event.
 
 ## Branch instances
 
-Switching branches in the workbench creates a git worktree next to the repo (`<repo>-worktrees/<branch>`), installs dependencies, and starts a designbook instance on a deterministic port. The bin is resolved from the config file's directory upward, so monorepos work. If the repo builds designbook from source, add a `designbook:setup` script to the root package.json — it runs after each worktree install (this monorepo uses it to build `packages/designbook`).
+Switching branches creates a git worktree nested inside the repo (`.designbook/worktrees/<branch>`), installs dependencies, and — in host mode — starts a separate designbook instance for it on a deterministic port (under `designbook dev`, the same proxy URL just retargets onto the worktree instead). The bin is resolved from the config file's directory upward, so monorepos work. If the repo builds designbook from source, add a `designbook:setup` script to the root package.json — it runs after each worktree install (this monorepo uses it to build `packages/designbook`).
 
 Each instance's output (install, setup, and the running server) is appended to `~/.designbook/logs/<repo>--<branch>.log`; failure messages point there.
 
 ## Vite compatibility
 
-designbook runs its own embedded Vite (with `configFile: false`) to compile the workbench UI, so it does not adopt the target repo's build config wholesale. Instead it bridges in the parts a repo's components need to resolve and compile, in this precedence order (highest wins):
+designbook runs its own embedded Vite (with `configFile: false`) to compile the full-view UI, so it does not adopt the target repo's build config wholesale. Instead it bridges in the parts a repo's components need to resolve and compile, in this precedence order (highest wins):
 
 1. **designbook's reserved aliases** — `@designbook-ui`, `@designbookapp/designbook/config`, `@designbookapp/designbook/adapters`. Always win.
 2. **Explicit sidecar** — a `designbook.vite.{ts,mts,js,mjs}` next to your `designbook.config.*`. The full escape hatch.
@@ -144,5 +146,5 @@ Run with `--debug` to log which sidecar/repo config was merged and whether the N
 
 ## Notes
 
-- The embedded Vite reserves the `@designbook-ui` alias for the workbench's own source (renamed from `@ui` so it can't squat a consumer repo that uses `@ui`), plus `@designbookapp/designbook/config` and `@designbookapp/designbook/adapters`. The consumer repo's own `tsconfig` path aliases are honored via `vite-tsconfig-paths`, and its `vite.config` / an explicit `designbook.vite.*` sidecar can contribute more — see [Vite compatibility](#vite-compatibility).
+- The embedded Vite reserves the `@designbook-ui` alias for designbook's own UI source (renamed from `@ui` so it can't squat a consumer repo that uses `@ui`), plus `@designbookapp/designbook/config` and `@designbookapp/designbook/adapters`. The consumer repo's own `tsconfig` path aliases are honored via `vite-tsconfig-paths`, and its `vite.config` / an explicit `designbook.vite.*` sidecar can contribute more — see [Vite compatibility](#vite-compatibility).
 - Pi credentials come from the SDK's standard auth flow (`~/.pi/agent/auth.json`) and provider env vars.

@@ -880,6 +880,10 @@ function FullViewBody({
                   : {}),
               }
             : undefined),
+        // Component-hit usage fallback (props panel write target) — only
+        // meaningful when codeTarget didn't resolve; see CanvasOverlay's
+        // toCanvasHit and CanvasUsageTarget.
+        usage: selectedHit.codeTarget ? undefined : selectedHit.usage,
       }
     : goToSelection;
 

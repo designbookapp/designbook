@@ -28,7 +28,7 @@ module scope don't throw). A [sidecar](/repo/compat/#the-designbookvite-sidecar)
 for any of those ids overrides the shim if you need real behavior.
 
 With the shims in place, a typical presentational Next component — one that imports `next/link`
-or `next/image` and renders markup — shows up on the canvas like any other component.
+or `next/image` and renders markup — shows up in designbook like any other component.
 
 ## What isn't supported yet
 

@@ -49,6 +49,11 @@ import {
   createSandboxOverridesVite,
   type RedirectsPayload,
 } from "./sandboxOverridesVite.ts";
+import {
+  createExportIndex,
+  isIndexableModuleId,
+  scanComponentExports,
+} from "./exportIndex.ts";
 
 /** dist/node/plugin.js → package root (dist/ui and dist/node live under it). */
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
@@ -704,6 +709,59 @@ function designbookPlugin(options: DesignbookPluginOptions = {}): Plugin[] {
     return true;
   }
 
+  // Auto export index (config-slim spec): scan every client-graph module this
+  // transform sees and mirror the full snapshot to the sidecar (debounced),
+  // where it replaces the config registry for hit-test labels + the sandbox
+  // export-scan ladder. A 15s re-push heals sidecar restarts (memory-only
+  // store there); failures degrade silently — consumers fall back to the scan.
+  const exportIndex = createExportIndex();
+  const projectRootPosix = toPosix(projectRoot);
+  let pushTimer: ReturnType<typeof setTimeout> | undefined;
+
+  async function pushExportIndex(): Promise<void> {
+    const { version, files } = exportIndex.snapshot();
+    if (version === 0) return;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 1500);
+    try {
+      await fetch(`${serverUrl}${DESIGNBOOK_API_BASE}/api/export-index`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ files }),
+        signal: controller.signal,
+      });
+    } catch {
+      // Sidecar down — the interval re-push covers it.
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  function scheduleExportIndexPush(): void {
+    if (pushTimer) clearTimeout(pushTimer);
+    pushTimer = setTimeout(() => {
+      pushTimer = undefined;
+      void pushExportIndex();
+    }, 500);
+    pushTimer.unref?.();
+  }
+
+  function maybeIndexExports(code: string, id: string): void {
+    if (
+      !isIndexableModuleId(id, {
+        projectRoot: projectRootPosix,
+        packageRoot: packageRootPosix,
+        configPath: configPathPosix,
+      })
+    ) {
+      return;
+    }
+    const repoRel = toPosix(id.split("?")[0]).slice(projectRootPosix.length + 1);
+    if (exportIndex.update(repoRel, scanComponentExports(code, repoRel))) {
+      scheduleExportIndexPush();
+    }
+  }
+
   // Cross-process write-suppression: the sidecar (a SEPARATE process) owns the
   // record of paths designbook just wrote. We poll it and drop the matching
   // hot updates in this (the target app's) Vite so an adapter-managed write
@@ -912,6 +970,15 @@ function designbookPlugin(options: DesignbookPluginOptions = {}): Plugin[] {
       }, 1000);
       poll.unref?.();
       devServer.httpServer?.once("close", () => clearInterval(poll));
+
+      // Export-index re-push: heals a sidecar restart (its store is
+      // memory-only) without any handshake. Cheap — the snapshot is a small
+      // JSON map and no-ops entirely while the index is empty.
+      const indexPush = setInterval(() => {
+        void pushExportIndex();
+      }, 15000);
+      indexPush.unref?.();
+      devServer.httpServer?.once("close", () => clearInterval(indexPush));
     },
     // Write-suppression: drop the hot update for a file designbook just wrote (the
     // adapter already reflected it in memory). Fast path uses the polled record;
@@ -959,6 +1026,10 @@ function designbookPlugin(options: DesignbookPluginOptions = {}): Plugin[] {
     transform: {
       order: "post",
       handler(code, id) {
+        // Export index: record this module's exported component names (the
+        // lowered ESM keeps every `export` form textual). Independent of the
+        // page-text option — the index is what hit-testing runs on.
+        maybeIndexExports(code, id);
         if (!shouldTransformPageText(id)) return undefined;
         const result = transformPageText(code, id);
         return result ?? undefined;

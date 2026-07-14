@@ -531,3 +531,146 @@ describe("L3 conversation endpoints (changeset layers §Sessions & conversations
     expect(meta).toContain('"conversationId": "c-route"');
   });
 });
+
+describe("props-edit usage-site write: component-hit ownerNames fallback", () => {
+  function post(pathname: string, body: unknown): IncomingMessage {
+    const req = Readable.from([
+      JSON.stringify(body),
+    ]) as unknown as IncomingMessage;
+    (req as { method?: string }).method = "POST";
+    (req as { headers?: unknown }).headers = { host: "localhost:8802" };
+    return req;
+  }
+  async function callPost(
+    api: ReturnType<typeof createApi>,
+    pathname: string,
+    body: unknown,
+  ): Promise<MockResponse> {
+    const mock = mockResponse();
+    await api.handle(
+      post(pathname, body),
+      mock.response as never,
+      new URL(`http://localhost:8802${pathname}`),
+    );
+    return mock;
+  }
+
+  const USAGE = `export function HomePage() {
+  return <ProductCard variant="hero" className="card" />;
+}
+`;
+
+  function makeHomePageProject() {
+    const { root, configPath } = projectWithConfig(
+      "export default { sets: [] };",
+    );
+    mkdirSync(join(root, "src", "pages"), { recursive: true });
+    writeFileSync(join(root, "src", "pages", "HomePage.tsx"), USAGE);
+    return { root, configPath };
+  }
+
+  // Mirrors CanvasUsageTarget: a component hit with no client-resolved
+  // codeTarget sends `ownerNames` (nearest first) instead of `file` — the
+  // server resolves the owning file via the SAME bounded export scan
+  // `/api/sandbox/source-owner` uses (resolveOwnerSource), then locates the
+  // `<ProductCard>` usage element as with any other props-edit write.
+  it("resolves the owning file from ownerNames when the client sends no file", async () => {
+    const { root, configPath } = makeHomePageProject();
+    const api = createApi({ configPath, projectRoot: root, port: 8802 });
+
+    const result = await callPost(api, "/api/props-edit", {
+      ownerNames: ["Link", "HomePage"],
+      elementName: "ProductCard",
+      className: "card",
+      prop: "variant",
+      kind: "enum",
+      value: "sale",
+    });
+
+    expect(result.status).toBe(200);
+    expect(JSON.parse(result.body)).toEqual({ ok: true });
+    const written = readFileSync(
+      join(root, "src", "pages", "HomePage.tsx"),
+      "utf8",
+    );
+    expect(written).toContain('variant="sale"');
+  });
+
+  it("200s unresolvable when nothing on the ownerNames chain resolves", async () => {
+    const { root, configPath } = makeHomePageProject();
+    const api = createApi({ configPath, projectRoot: root, port: 8802 });
+
+    const result = await callPost(api, "/api/props-edit", {
+      ownerNames: ["Nowhere"],
+      elementName: "ProductCard",
+      prop: "variant",
+      kind: "enum",
+      value: "sale",
+    });
+
+    expect(result.status).toBe(200);
+    const payload = JSON.parse(result.body) as {
+      ok: boolean;
+      unresolvable?: string;
+    };
+    expect(payload.ok).toBe(false);
+    expect(payload.unresolvable).toBeTruthy();
+    // Untouched — no file was ever identified to write.
+    expect(
+      readFileSync(join(root, "src", "pages", "HomePage.tsx"), "utf8"),
+    ).toBe(USAGE);
+  });
+
+  it("400s when neither file nor ownerNames is sent", async () => {
+    const { root, configPath } = makeHomePageProject();
+    const api = createApi({ configPath, projectRoot: root, port: 8802 });
+
+    const result = await callPost(api, "/api/props-edit", {
+      elementName: "ProductCard",
+      prop: "variant",
+      kind: "enum",
+      value: "sale",
+    });
+
+    expect(result.status).toBe(400);
+  });
+
+  it("with an ACTIVE conversation, an ownerNames-resolved write stages onto direct-edits (real file untouched)", async () => {
+    const { root, configPath } = makeHomePageProject();
+    execFileSync("git", ["init", "-q", "-b", "main", root]);
+    execFileSync("git", ["add", "-A"], { cwd: root });
+    execFileSync(
+      "git",
+      ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "init"],
+      { cwd: root },
+    );
+    const api = createApi({ configPath, projectRoot: root, port: 8802 });
+    await callPost(api, "/api/sandbox/active-conversation", {
+      conversationId: "c-usage",
+    });
+
+    const result = await callPost(api, "/api/props-edit", {
+      ownerNames: ["HomePage"],
+      elementName: "ProductCard",
+      prop: "variant",
+      kind: "enum",
+      value: "sale",
+    });
+
+    expect(result.status).toBe(200);
+    expect(JSON.parse(result.body)).toMatchObject({ ok: true, staged: true });
+    // Real file untouched — the write landed on the direct-edits changeset.
+    expect(
+      readFileSync(join(root, "src", "pages", "HomePage.tsx"), "utf8"),
+    ).toBe(USAGE);
+    const committed = execFileSync(
+      "git",
+      [
+        "show",
+        "refs/designbook/changesets/direct-c-usage/trunk:src/pages/HomePage.tsx",
+      ],
+      { cwd: root, encoding: "utf8" },
+    );
+    expect(committed).toContain('variant="sale"');
+  });
+});

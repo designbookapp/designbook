@@ -1,13 +1,13 @@
 ---
 title: Install & run
-description: Install designbook, scaffold it into your Vite app with designbook init, and open the workbench.
+description: Install designbook, scaffold it into your Vite app with designbook init, and open the full view.
 ---
 
 Designbook ships as a single dev-dependency package, `@designbookapp/designbook`, exposing a `designbook` CLI.
 By default it runs in **[injected mode](/getting-started/injected-mode/)**: it injects into your
 app's own Vite dev server, so your components render through your real bundler, styling, and
-providers. You browse a stable proxy URL and a `◈ designbook` toolbar pill opens the workbench —
-tools right on the page, or the full canvas.
+providers. You browse a stable proxy URL, and a pencil button opens the [full
+view](/concepts/full-view/) over your running app.
 
 ## Quickstart
 
@@ -48,7 +48,7 @@ standalone component library, or a Next.js app — use [host mode](#host-mode-no
 want to check that glob and grow the config. Continue to
 **[Your first config](/getting-started/first-config/)**, and read
 [Injected mode](/getting-started/injected-mode/) to understand the plugin, the config variant, and
-the pill → overlay flow.
+the pencil → full-view flow.
 
 If `init` can't scaffold cleanly (a non-standard Vite config, say), you can write the files by
 hand — the [Injected mode](/getting-started/injected-mode/) page has the full Vite-variant template
@@ -57,8 +57,8 @@ and the plugin options.
 ## Authentication
 
 The embedded Pi agent uses the Pi SDK's standard auth flow (`~/.pi/agent/auth.json`, then provider
-environment variables). Two ways to connect a model — the canvas, code panel, and deep links all
-work without one, but the chat tab needs it:
+environment variables). Two ways to connect a model — selection, the Code panel, and deep links all
+work without one, but Chat needs it:
 
 - **OAuth / subscription** — run `npx designbook login` in your project (the Pi CLI ships with
   designbook, no separate install), then `/login`. Credentials are saved to `~/.pi/agent/auth.json`;

@@ -8,6 +8,7 @@
 
 import { type ReactNode } from "react";
 import { App } from "./App";
+import { DeprecationNotice } from "./DeprecationNotice";
 import { useAdapterSnapshot, type AdapterRuntime } from "./adapterRuntime";
 
 /**
@@ -23,7 +24,10 @@ function WorkbenchRoot({ runtime }: { runtime: AdapterRuntime }) {
         {wrapped}
       </Provider>
     ),
-    <App />,
+    <>
+      <App />
+      <DeprecationNotice />
+    </>,
   );
 }
 

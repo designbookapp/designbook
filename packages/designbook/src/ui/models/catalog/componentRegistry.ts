@@ -10,7 +10,12 @@
  */
 
 import { lazy, type ComponentType } from "react";
-import { repoPathFromGlobKey, sets, sourceModules } from "@designbook-ui/designbook";
+import {
+  apiUrl,
+  repoPathFromGlobKey,
+  sets,
+  sourceModules,
+} from "@designbook-ui/designbook";
 import { readLazyMeta } from "@designbookapp/designbook/config";
 import type {
   ComponentSet,
@@ -39,6 +44,12 @@ type RegistryEntry = {
   editableProps?: EditableProp[];
   matrixAxes?: MatrixAxis[];
   previewWidth?: number;
+  /** "index" for entries synthesized from the auto export index (config-slim);
+   * absent for config-`sets` entries. Index entries are name-only (no ref). */
+  origin?: "index";
+  /** All repo files exporting this name (index entries only, sorted). The
+   * first is `sourcePath`; the node-side ladder re-verifies on pin/edit. */
+  sourceCandidates?: string[];
 };
 
 /** A value renderable as a React element type (function, memo/forwardRef, lazy). */
@@ -261,6 +272,125 @@ function makeLazyComponent(entry: RegistryEntry): ComponentType {
   });
 }
 
+// ---------------------------------------------------------------------------
+// Auto export index (config-slim spec): registry entries WITHOUT config sets.
+//
+// The vite plugin indexes the client graph (repo file → exported component
+// names); the workbench fetches the snapshot from the sidecar and synthesizes
+// a name-keyed entry per exported component. `matchFiber`'s by-name fallback
+// then treats every in-repo named component as a drillable boundary — the
+// same mechanism lazy set entries already used, generalized to the whole app.
+// Config-`sets` entries (deprecated but still honored this release) win on
+// name collisions; index entries never carry a component ref (byRef is
+// untouched).
+// ---------------------------------------------------------------------------
+
+type ExportIndexFiles = Record<string, string[]>;
+
+/** Names currently registered from the index (for re-sync removal). */
+const indexRegisteredNames = new Map<string, RegistryEntry>();
+const ambiguityLogged = new Set<string>();
+
+/** Synthesized entry id for an index-backed component. */
+function indexEntryId(file: string, name: string): string {
+  return `src:${file}#${name}`;
+}
+
+/**
+ * (Re)build the index-backed slice of `registryByName` from a snapshot.
+ * Deterministic: files sorted, first file wins `sourcePath`; a name exported
+ * from several files keeps the full candidate list and logs once (the
+ * node-side ladder disambiguates by owner-chain proximity on pin/edit).
+ */
+function applyExportIndexToRegistry(files: ExportIndexFiles): void {
+  const byName = new Map<string, string[]>();
+  for (const file of Object.keys(files).sort()) {
+    const names = files[file];
+    if (!Array.isArray(names)) continue;
+    for (const name of names) {
+      if (typeof name !== "string" || !/^[A-Z]/.test(name)) continue;
+      const list = byName.get(name);
+      if (list) list.push(file);
+      else byName.set(name, [file]);
+    }
+  }
+
+  // Remove index entries whose name vanished from the snapshot.
+  for (const [name, entry] of [...indexRegisteredNames]) {
+    if (byName.has(name)) continue;
+    indexRegisteredNames.delete(name);
+    if (registryByName.get(name) === entry) registryByName.delete(name);
+  }
+
+  for (const [name, candidates] of byName) {
+    const existing = registryByName.get(name);
+    const previous = indexRegisteredNames.get(name);
+    if (existing && existing !== previous) continue; // config sets win
+    if (candidates.length > 1 && !ambiguityLogged.has(name)) {
+      ambiguityLogged.add(name);
+      console.warn(
+        `[designbook] export index: component "${name}" is exported from ${candidates.length} files (${candidates.join(", ")}); using ${candidates[0]} for display — pins re-resolve the file server-side.`,
+      );
+    }
+    const sourcePath = candidates[0];
+    if (
+      previous &&
+      previous.sourcePath === sourcePath &&
+      previous.sourceCandidates?.length === candidates.length
+    ) {
+      continue; // unchanged
+    }
+    const entry: RegistryEntry = {
+      id: indexEntryId(sourcePath, name),
+      name,
+      label: name,
+      sourcePath,
+      component: undefined,
+      setId: "src",
+      key: name,
+      exportName: name,
+      origin: "index",
+      sourceCandidates: candidates,
+    };
+    indexRegisteredNames.set(name, entry);
+    registryByName.set(name, entry);
+  }
+}
+
+let exportIndexVersion = -1;
+let exportIndexSyncStarted = false;
+
+/** One fetch+apply pass; version-gated so unchanged snapshots are free. */
+async function syncExportIndexOnce(): Promise<void> {
+  try {
+    const response = await fetch(apiUrl("/api/export-index"));
+    if (!response.ok) return;
+    const payload = (await response.json()) as {
+      version?: number;
+      files?: ExportIndexFiles;
+    };
+    if (typeof payload.version !== "number" || !payload.files) return;
+    if (payload.version === exportIndexVersion) return;
+    exportIndexVersion = payload.version;
+    applyExportIndexToRegistry(payload.files);
+  } catch {
+    // Sidecar unreachable — keep whatever we have; next poll retries.
+  }
+}
+
+/**
+ * Start the export-index poll (mount calls this once). The index grows lazily
+ * as the app's vite transforms modules, so a short poll keeps late-loading
+ * pages selectable; version gating makes the steady state a no-op.
+ */
+function startExportIndexSync(): void {
+  if (exportIndexSyncStarted) return;
+  exportIndexSyncStarted = true;
+  void syncExportIndexOnce();
+  const timer = setInterval(() => void syncExportIndexOnce(), 3000);
+  (timer as { unref?: () => void }).unref?.();
+}
+
 function getRegistryEntry(id: string): RegistryEntry | undefined {
   return registry.find((entry) => entry.id === id);
 }
@@ -274,6 +404,7 @@ function getSetWrapper(setId: string): ComponentSet["wrapper"] {
 }
 
 export {
+  applyExportIndexToRegistry,
   asLazySource,
   getRegistryEntry,
   getSetEntries,
@@ -284,5 +415,6 @@ export {
   registryByName,
   registryByRef,
   resolveComponentExport,
+  startExportIndexSync,
 };
 export type { EditableProp, MatrixAxis, RegistryEntry };

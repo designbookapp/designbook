@@ -38,6 +38,49 @@ let serverUrl: string | undefined;
 let routing: "hash" | "memory" = "hash";
 
 /**
+ * Config fields REMOVED in the slim config (config-slim spec): the auto
+ * export index derives everything they configured. They still function this
+ * release (deprecate-warn, never crash — client repos still pass them) and
+ * will be ignored in the next.
+ */
+const DEPRECATED_CONFIG_FIELDS = [
+  ["sets", "component registration — components are auto-indexed from your source"],
+  ["flows", "the flows page is retired"],
+  ["sourceModules", "source attribution comes from the auto export index"],
+  [
+    "providers",
+    "previews run in your live app, which brings its own providers; adapter Providers come from the adapters themselves",
+  ],
+  [
+    "datasets",
+    "the component canvas is retired; provide DatasetContext in your app if you use useDataset()",
+  ],
+] as const;
+
+/** Deprecated field names present in the loaded config (UI notice source). */
+let deprecatedConfigFields: string[] = [];
+let deprecationWarned = false;
+
+function warnDeprecatedConfigFields(rawConfig: DesignbookConfig): void {
+  const record = rawConfig as unknown as Record<string, unknown>;
+  deprecatedConfigFields = DEPRECATED_CONFIG_FIELDS.filter(([field]) => {
+    const value = record[field];
+    if (value === undefined || value === null) return false;
+    return !(Array.isArray(value) && value.length === 0);
+  }).map(([field]) => field);
+  if (deprecatedConfigFields.length === 0 || deprecationWarned) return;
+  deprecationWarned = true;
+  const lines = DEPRECATED_CONFIG_FIELDS.filter(([field]) =>
+    deprecatedConfigFields.includes(field),
+  ).map(([field, why]) => `  - \`${field}\`: ${why}`);
+  console.warn(
+    `[designbook] DEPRECATED designbook.config fields — they still work this release but will be ignored in the next:\n${lines.join(
+      "\n",
+    )}\nSlim config shape: { title?, adapters, i18n?, … } — components, drill boundaries and code attribution are now derived automatically from your source exports.`,
+  );
+}
+
+/**
  * Populate the config store. Must run before any consumer of the exports below
  * renders (or is imported). `mountWorkbench` guarantees this ordering.
  */
@@ -57,6 +100,12 @@ function initConfigStore(
   themes = rawConfig.themes ?? [];
   providers = rawConfig.providers ?? [];
   sourceModules = rawConfig.sourceModules ?? {};
+  warnDeprecatedConfigFields(rawConfig);
+}
+
+/** Deprecated config fields the loaded config still uses (empty = clean). */
+function getDeprecatedConfigFields(): string[] {
+  return deprecatedConfigFields;
 }
 
 /**
@@ -90,6 +139,7 @@ export {
   config,
   configDir,
   datasets,
+  getDeprecatedConfigFields,
   initConfigStore,
   providers,
   repoPathFromGlobKey,

@@ -1,11 +1,12 @@
 ---
 title: Flags adapter
-description: Edit per-tenant feature flag values from JSON, fed to your own FlagsProvider on the canvas.
+description: Edit per-tenant feature flag values from JSON, written back to the same source your app reads.
 ---
 
-The **flags adapter** teaches the canvas to read and edit per-tenant feature flag values from
-a JSON source of truth. It contributes a **tenant** dimension, a **Flags** tab of editable
-fields, and a provider that feeds the active tenant's flag map to your own `FlagsProvider`.
+The **flags adapter** teaches designbook to read and edit per-tenant feature flag values from
+a JSON source of truth. It contributes a **tenant** dimension (top bar), a **Flags** tab of
+editable fields (left panel), and a `Provider` field required by the config shape — see
+[Your provider](#your-provider) for what it actually reaches today.
 
 ```tsx
 import { flagsAdapter } from "@designbookapp/designbook/adapters";
@@ -32,7 +33,7 @@ adapters: [
 
 | Option | Type | Description |
 | --- | --- | --- |
-| `Provider` | `ComponentType<{ tenant, flags, children }>` | Your provider, fed `{ tenant, flags }` for the active tenant. |
+| `Provider` | `ComponentType<{ tenant, flags, children }>` | Required. Constructed and fed `{ tenant, flags }`, but wrapped around the designbook chrome, not your running app — see [Your provider](#your-provider). |
 | `source` | `Record<string, unknown>` | The flag source: an `import.meta.glob` result (eager, `import: "default"`) or a plain object. See layouts below. |
 | `sourcePath` | `string` | Write target (config-relative) for the single-file layout. |
 | `flags` | `Record<string, FlagSpec>` | The flags to surface as editable fields, keyed by flag id. |
@@ -67,30 +68,20 @@ rolling back on failure.
 
 ## Your provider
 
-The active tenant's flag map is passed to your `Provider` as `{ tenant, flags }`, wrapped
-around the canvas preview. Switching the tenant dimension re-renders the preview with that
-tenant's flags, and editing a flag field re-renders it immediately. Your provider is your own
-code — it decides how components consume the flags.
+`Provider` is a required option, and designbook does construct it — fed `{ tenant, flags }` for
+the active tenant — but it's wrapped around the rest of the designbook chrome, **not around
+your running app**. Your app always renders live in its own frame (see [Reaching your running
+app](/adapters/overview/#reaching-your-running-app)), a separate document a chrome-side React
+tree can't reach into, so mounting your `FlagsProvider` here doesn't make a tenant switch or a
+flag edit show up in your app.
 
-:::caution[Gotcha: DOM-based scoping inside a Provider doesn't reach cell content]
-Your `Provider` mounts inside the workbench's **shadow root**; canvas cells are **slotted light
-DOM**. React context crosses that boundary fine — a `Provider` that feeds values through
-context (the pattern above) works everywhere. But a `Provider` that scopes via the **DOM**
-(sets a `data-*` attribute on a wrapper element and relies on CSS like
-`[data-flag] .thing { … }`) won't affect cells: for slotted content, the CSS ancestor is where
-an element is *defined* (the light DOM), not where it's *slotted* (under your shadow-root
-wrapper) — so that wrapper is never an ancestor-selector match.
+What actually makes an edit show up: your app needs to read the **same flags source** — the
+`source` JSON this adapter edits — through its own normal import/fetch, wherever it already
+mounts its own `FlagsProvider` (in your app's real entry point, unrelated to this config).
+Saving a flag writes to that file through the designbook API; your dev server's own hot reload
+then picks the change up in your running app, the same as if you'd hand-edited the file.
 
-Prefer context-based scoping — a prop or className your cells read from context — over
-attribute-plus-descendant-CSS in the first place; it's boundary-agnostic. If you do need to
-re-emit an attribute for CSS to key off, mirror it **in the light DOM, inside the cell**, not
-on the Provider's own wrapper:
-
-```tsx
-function FlagScope({ children }: { children: ReactNode }) {
-  const { flags } = useFlags(); // your provider's context
-  return <div data-density={flags.density}>{children}</div>;
-}
-// Render <FlagScope> at the root of each cell demo (or your variant wrapper).
-```
-:::
+The `tenant` dimension itself only scopes **which tenant's flags the Flags tab shows and
+edits** — switching it doesn't push a value into your running app. If your app also needs to
+follow the picked tenant, it has to derive "which tenant am I" from its own source (a route, a
+subdomain, a cookie) independently of this picker.

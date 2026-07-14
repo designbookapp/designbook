@@ -157,5 +157,43 @@ function resolveSourceOwner(el: Element): SourceOwner | undefined {
   return sourceOwnerFromFiber(fiber, sourcePathByRef);
 }
 
-export { resolveSourceOwner, sourceOwnerFromFiber };
-export type { SourceOwner };
+// ---------------------------------------------------------------------------
+// Component-hit usage descriptor (props panel — docs/specs/props-panel.md).
+// ---------------------------------------------------------------------------
+
+/** Usage-site descriptor for the props panel's write payload — see
+ * `CanvasUsageTarget` (ui/types.ts) for field semantics. */
+type ComponentUsage = {
+  ownerNames: string[];
+  name: string;
+  className?: string;
+};
+
+/**
+ * Derive a COMPONENT hit's usage descriptor from its OWN fiber: the same
+ * `_debugOwner`/`return` ladder `sourceOwnerFromFiber` walks (here started
+ * from the SELECTED component's fiber, not an owned DOM leaf, so the walk
+ * begins at whoever's JSX instantiated it) paired with the component's own
+ * JSX name and — when cheaply available — the className the usage site
+ * passed it (`fiber.memoizedProps.className`). Undefined when no named
+ * owner exists on the chain (nothing for the server ladder to try).
+ */
+function componentUsageFromFiber(
+  fiber: Fiber,
+  name: string,
+): ComponentUsage | undefined {
+  const owner = sourceOwnerFromFiber(fiber, () => undefined);
+  if (!owner || owner.ownerNames.length === 0) return undefined;
+  const className =
+    typeof fiber.memoizedProps?.className === "string"
+      ? fiber.memoizedProps.className
+      : undefined;
+  return {
+    ownerNames: owner.ownerNames,
+    name,
+    ...(className ? { className } : {}),
+  };
+}
+
+export { componentUsageFromFiber, resolveSourceOwner, sourceOwnerFromFiber };
+export type { ComponentUsage, SourceOwner };

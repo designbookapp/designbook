@@ -1,12 +1,12 @@
 ---
 title: Injected mode
-description: How designbookPlugin injects the workbench into your app's own Vite dev server via a config variant, a pill, and a shadow-DOM overlay.
+description: How designbookPlugin injects the full view into your app's own Vite dev server via a config variant, a pencil button, and a shadow-DOM overlay.
 ---
 
 Injected mode is how Designbook runs by default: instead of hosting its own server,
 it **injects into your app's own Vite dev server**. Your components render through
 your app's real bundler, styling, and providers — the same pipeline production uses —
-and the workbench appears as a toolbar pill on your running app.
+and a pencil button on your running app opens the [full view](/concepts/full-view/) over it.
 
 This page is the conceptual heart of that model. For the click-by-click setup, see
 [Install & run](/getting-started/install-and-run/); most of it is scaffolded for you
@@ -17,10 +17,10 @@ by [`designbook init`](/reference/init/).
 `designbookPlugin()` is a Vite plugin, imported from the `designbook` root export. Added
 to your Vite config, it injects three things into the dev server:
 
-- an agent/toolbar client script,
+- a boot client script (the pencil button + overlay host),
 - your `.designbook/config.tsx`, compiled by **your** bundler (so your aliases, tsconfig
   paths, providers, and styles all apply),
-- a lazily-loaded, prebuilt workbench chunk.
+- a lazily-loaded, prebuilt chunk for the full-view UI.
 
 Your normal `vite build` is untouched — the plugin only runs in the variant config below.
 
@@ -80,37 +80,34 @@ Adjust the `baseConfig` import to your config's real filename and extension. If 
 config is a function, the wrapper calls it with the current `env`; if it's an object, it uses
 it directly.
 
-## Pill → tool strip → canvas → shadow DOM
+## Pencil → full view → shadow DOM
 
 Once the app is running through the variant, Designbook adds itself to the page without
 touching your app's markup or URL:
 
-- **Collapsed** — a `◈ designbook` toolbar pill sits in the bottom-right corner of your
-  running app.
-- **Click the pill** — a compact tool strip appears over the running app: select a live
-  component, edit text in place, or prompt Pi, without leaving the page. See
-  [Live-app editing](/concepts/page-tools/).
-- **Open the full canvas** — from the strip's expand action (or a deep link), a full-screen
-  overlay takes over. It renders inside a **shadow DOM**, so the workbench chrome can't collide
-  with your app's CSS (and your app's CSS can't leak into the chrome). The canvas cells render
-  your components in light DOM under your app's own React, providers, and styles.
+- **Collapsed** — a round pencil button sits in the bottom-left corner of your running app.
+- **Click it** — the [full view](/concepts/full-view/) opens: a full-screen overlay with chrome
+  (chat, changesets, tokens, flags, the right panel) around your app, shown live in the center.
+  It renders inside a **shadow DOM**, so the chrome can't collide with your app's CSS (and your
+  app's CSS can't leak into the chrome).
+- **Play button, same spot** — exits back to your untouched, running app. Nothing about your
+  app's URL or state changes across the round trip.
 
-Because the overlay lives in a sibling root, it survives even when your app crashes at boot —
-the canvas mounts your components itself.
+Because the overlay lives in a sibling root, it survives even when your app crashes at boot.
 
 ### HMR safety
 
 Designbook's own write-backs (token, text, flag edits) never reload your app. When an edit
 *does* force a full page reload — editing `index.html`, say — that reload is **deferred** while
-the overlay is expanded and surfaced as an "app updated — reload" pill. It applies when you
-click the pill, or automatically when you collapse the overlay, so a reload never yanks the
-canvas out from under you mid-edit.
+the overlay is open and surfaced as an "app updated — reload" pill. It applies when you
+click the pill, or automatically when you close the full view, so a reload never yanks your
+app out from under you mid-edit.
 
 ### Reload rehydration
 
-Designbook drives the workbench with an in-memory router, so your app's own URL is never
-touched. When a reload does happen, the workbench restores its own expanded/collapsed and
-selection state — you come back to the same component you were looking at.
+Designbook drives the full view with an in-memory router, so your app's own URL is never
+touched. When a reload does happen, the full view restores its own open/closed and
+selection state — you come back to the same selection you were looking at.
 
 ## Requirements
 
@@ -121,7 +118,7 @@ a standalone component library, or a Next.js app (no Vite dev server) — use
 ## Next steps
 
 - **[Install & run](/getting-started/install-and-run/)** — the injected quickstart end to end.
-- **[Live-app editing](/concepts/page-tools/)** — the tool strip and the App page.
+- **[The full view](/concepts/full-view/)** — the layout, tools, and panels.
 - **[`designbook dev`](/reference/designbook-dev/)** — the sidecar + proxy that fronts it.
 - **[`designbook init`](/reference/init/)** — scaffold the variant, config, and scripts.
 - **[fromGlob & lazy entries](/config/from-glob/)** — register components with per-cell isolation.

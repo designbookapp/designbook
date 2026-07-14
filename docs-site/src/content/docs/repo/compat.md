@@ -10,8 +10,8 @@ auto-detection and sidecar below only apply to [host mode](/getting-started/inst
 where Designbook runs its own embedded Vite.
 :::
 
-In host mode Designbook runs its **own embedded Vite** (with `configFile: false`) to compile the
-workbench UI, so it does not adopt your repo's build config wholesale. Instead it **bridges in** the
+In host mode Designbook runs its **own embedded Vite** (with `configFile: false`) to compile its
+own UI, so it does not adopt your repo's build config wholesale. Instead it **bridges in** the
 parts your components need to resolve and compile. The goal is zero-config: point it at your
 repo and your components render.
 
@@ -88,7 +88,7 @@ server, so they're filtered out:
 
 - **Framework plugins** (React Router, Remix, Next, Astro, Svelte(Kit), Solid, Qwik, PWA,
   Nitro) — they'd hijack the dev server and its routing.
-- **Dev-server / middleware plugins** — they claim routes the workbench itself needs.
+- **Dev-server / middleware plugins** — they claim routes designbook itself needs.
 - **Write-side-effect plugins** (codegen / `dts` generators) — they write generated files into
   your repo as a side effect of the dev server running.
 - **Linters / type-checkers** — they spawn their own checker against the wrong root.

@@ -11,7 +11,7 @@ export default defineConfig({
       title: "Designbook",
       tagline: "One product. Every angle.",
       description:
-        "Designbook opens your running React app as one structure with a live view per discipline — tokens, copy, flags, code — plus an embedded coding agent that lands every edit as real code.",
+        "Designbook opens your running React app as one full view with a live editing surface per discipline — tokens, copy, flags, code — plus an embedded coding agent that lands every edit as real code.",
       customCss: ["./src/styles/custom.css"],
       social: [],
       sidebar: [
@@ -27,12 +27,14 @@ export default defineConfig({
         {
           label: "Core concepts",
           items: [
-            { label: "Canvas & flows", slug: "concepts/canvas-and-flows" },
-            { label: "Component sets", slug: "concepts/component-sets" },
+            { label: "The full view", slug: "concepts/full-view" },
+            { label: "Component registration", slug: "concepts/component-sets" },
             { label: "Selection & drill-in", slug: "concepts/selection" },
+            { label: "Chat & the Pi agent", slug: "concepts/agent" },
+            { label: "Changesets & the Changes panel", slug: "concepts/changesets" },
+            { label: "History explorer", slug: "concepts/history" },
+            { label: "Props panel", slug: "concepts/props-panel" },
             { label: "Code panel", slug: "concepts/code-panel" },
-            { label: "The Pi agent", slug: "concepts/agent" },
-            { label: "Live-app editing", slug: "concepts/page-tools" },
           ],
         },
         {
@@ -41,7 +43,7 @@ export default defineConfig({
             { label: "defineConfig", slug: "config/define-config" },
             { label: "fromGlob & lazy entries", slug: "config/from-glob" },
             { label: "Component sets & overrides", slug: "config/sets-and-overrides" },
-            { label: "Flows & wireframes", slug: "config/flows" },
+            { label: "Flows (deprecated)", slug: "config/flows" },
           ],
         },
         {

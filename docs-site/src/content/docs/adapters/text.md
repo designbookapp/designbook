@@ -1,12 +1,13 @@
 ---
 title: Text & i18next
-description: The canvas text tool, keyed i18next catalog editing, plurals and placeholders, and the source-literal fallback.
+description: The text tool, keyed i18next catalog editing, plurals and placeholders, and the source-literal fallback.
 ---
 
-The canvas **text tool** attributes each rendered string back to its source of truth and
-saves edits there. That mapping is pluggable: a **text adapter** claims a text node, provides
-its display value and editor, and knows how to persist a change. Adapters run as an ordered
-chain — the first to claim a node wins.
+The **text tool** (the footer tool picker's "Edit text", next to Select) attributes each
+rendered string in your running app back to its source of truth and saves edits there. That
+mapping is pluggable: a **text adapter** claims a text node, provides its display value and
+editor, and knows how to persist a change. Adapters run as an ordered chain — the first to
+claim a node wins.
 
 Two text adapters ship in `@designbookapp/designbook/adapters`:
 
@@ -40,21 +41,24 @@ i18n: {
 | Field | Type | Description |
 | --- | --- | --- |
 | `resources` | `Record<string, unknown>` | `import.meta.glob` over locale JSON, **eager**, `import: "default"`. Keys must match `…locales/<locale>/<namespace>.json`. |
-| `languages` | `LanguageOption[]` | Languages offered in the canvas settings bar. Defaults to the locales found in `resources`. |
+| `languages` | `LanguageOption[]` | Languages offered in the top bar's language picker. Defaults to the locales found in `resources`. |
 | `defaultLocale` | `string` | Locale used at startup and as fallback. Default `"en-US"`. |
 | `defaultNamespace` | `string` | Default i18next namespace. Defaults to the first namespace found in `resources`. |
 | `localePath` | `string` | Where the text tool writes edits back, config-relative. `{locale}` and `{namespace}` are substituted. Default `"./locales/{locale}/{namespace}.json"`. |
 
 ## How keyed editing works
 
-The i18next adapter owns a workbench-private i18next instance built from your `resources`. It
-registers an invisible-marker post-processor so each rendered string carries its **key** back
-to the text tool — so when you click a string, the tool knows exactly which catalog entry it
-is, and shows a rich editor:
+The i18next adapter owns its own i18next instance, built from your `resources` and used to
+drive the rich editor (templates, plurals, placeholder metadata) — separate from whatever
+i18next instance your running app renders through. Marker attribution — how a rendered string
+carries its **key** back to the text tool — works differently; see
+[Marker attribution](#marker-attribution) below.
 
-- **Live language switching** — a **Language** dimension in the settings bar; switching drives
-  `i18next.changeLanguage`, and edits read and write the **currently viewed** locale, not the
-  default.
+- **Live language switching** — a **Language** dimension in the top bar; switching drives
+  `i18next.changeLanguage` on the adapter's instance and best-effort mirrors it into your
+  running app's own instance (see [Reaching your running
+  app](/adapters/overview/#reaching-your-running-app)); edits read and write the **currently
+  viewed** locale, not the default.
 - **Plurals** — when a key has plural forms (`_zero`, `_one`, `_two`, `_few`, `_many`,
   `_other`), the editor shows every form together.
 - **Placeholders** — interpolation placeholders are surfaced with their example/description
@@ -90,35 +94,28 @@ rendered text matches exactly one literal in the owning component's file. Ambigu
 (the same text appears more than once, or is computed) fall through to a "hardcoded string"
 callout rather than risk editing the wrong one.
 
-This is why plain, un-internationalised strings are still editable on the canvas with no
+This is why plain, un-internationalised strings are still editable in your running app with no
 `i18n` config at all — the fallback handles the unambiguous cases.
 
-## Injected mode: sharing one react-i18next instance
+## Marker attribution
 
-In [injected mode](/getting-started/injected-mode/), the i18next adapter's marker attribution
-depends on your components and the adapter's `I18nextProvider` resolving to the **same**
-`i18next`/`react-i18next` module — that's what lets a rendered string carry its key back to the
-text tool instead of reading as a plain, unattributed literal.
-
-Two things make this work with no configuration on your part:
-
-- `i18next` and `react-i18next` are externalized from the workbench bundle, so the adapter
-  resolves to your app's own copy rather than shipping a second one.
-- `designbookPlugin()` automatically adds `resolve.dedupe: ["react-i18next", "i18next"]` to
-  your Vite config (merged with any dedupe you already declare), so even a monorepo with more
-  than one copy of these packages resolves to one shared instance. You don't need to add this
-  dedupe yourself.
-
-The only requirement on your side: `i18next` and `react-i18next` must be **resolvable
-dependencies of the app**, not just of a library it happens to use internally.
+Your app renders live inside its own frame — a separate document designbook's own React tree
+can't reach into — so attributing a rendered string back to its i18next key can't rely on a
+shared React context or a shared module instance. Instead, `designbookPlugin()` rewrites your
+app's own source at dev-server transform time: a call whose callee is a bare `t`, a
+non-computed `.t` member (`i18n.t(...)`), or a non-computed `._` member (Lingui's compiled
+`t`/`msg` macros) gets wrapped so its resolved string carries an invisible marker back to
+designbook. This needs **no configuration** and does not depend on your app sharing an
+i18next/react-i18next instance with designbook — it works whether your app renders through its
+own instance, a copy that happens to be shared, or Lingui.
 
 :::note[Gotcha: strings show up as "hardcoded" with no error]
-If `i18next`/`react-i18next` aren't resolvable dependencies of the app — or an unusual resolve
-setup shadows them in a way the automatic dedupe can't reach — marker attribution silently
-fails. The text tool then treats every live string as a plain hardcoded literal (routed to
-"Prompt Pi" rather than inline editing), with no error anywhere. If in-place text editing shows
-nothing editable on a screen you know is translated, check that both packages are direct,
-resolvable dependencies of the app.
+The rewrite is a syntactic match on the call site, not a runtime check — so a translation
+function that isn't named `t` (or called as `i18n.t(...)` / `i18n._(...)`) won't be recognized,
+and the text tool falls back to treating that string as a plain hardcoded literal (routed to
+"Prompt Pi" rather than inline/keyed editing), with no error anywhere. If in-place text editing
+shows nothing editable on a screen you know is translated, check that the call site matches one
+of those three shapes.
 :::
 
 ## Explicit ordering

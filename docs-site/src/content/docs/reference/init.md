@@ -34,8 +34,8 @@ Three things:
 
 1. **`.designbook/config.tsx`** — a `fromGlob` registry template pointed at the detected components
    directory (glob relative to `.designbook/`, so `../…`), with a commented-out `overrides`
-   example. `.designbook/` is THE designbook folder for the app (it also holds figma baselines).
-   See [fromGlob & lazy entries](/config/from-glob/).
+   example. `.designbook/` is THE designbook folder for the app (it also holds Figma push
+   markers and branch worktrees). See [fromGlob & lazy entries](/config/from-glob/).
 2. **`vite.designbook.config.<ext>`** — the Vite variant that wraps your real config, drops any
    `vite-plugin-checker`, appends `designbookPlugin()`, and sets `server.open: false`. The extension
    matches your base Vite config's. See [Injected mode](/getting-started/injected-mode/).

@@ -11,9 +11,9 @@ the API describes how built-ins are wired, and pins the contract they'll share.
 :::
 
 An **integration** connects Designbook to an external design/dev tool. The built-in one is
-[Figma](/figma/): its left-rail tab, push/pull REST routes, WebSocket bridge to the Figma
-plugin, Pi agent tools, and the `figma-pull` skill all register through this seam — core
-Designbook contains no Figma-specific code paths.
+[Figma](/figma/): its push/pull REST routes, WebSocket bridge to the Figma plugin, Pi agent
+tools, the `figma-pull` skill, a Props-panel section, and a selection-context contribution all
+register through this seam — core Designbook contains no Figma-specific code paths.
 
 ## Configuring integrations
 
@@ -25,7 +25,7 @@ export default defineConfig({
   // …
   integrations: {
     // Disable the built-in Figma integration entirely
-    // (tab, routes, bridge, agent tools, skill):
+    // (routes, bridge, agent tools, skill, props-panel section, selection context):
     figma: false,
   },
 });
@@ -66,7 +66,7 @@ import type {
 
 const myIntegration: IntegrationPlugin = {
   name: "mytool",
-  ui: async () => uiSpec,   // left-rail tab + optional canvas serializer
+  ui: async () => uiSpec,   // props-panel section(s) + selection context (below)
   node: nodeSpec,           // routes, device bridge, Pi tools, skills, events
 };
 ```
@@ -82,9 +82,23 @@ const myIntegration: IntegrationPlugin = {
   This is the only WebSocket surface integrations get.
 - **`PluginNodeSpec.piTools` / `skillsDir`** — tools and packaged Agent Skills contributed
   to the embedded Pi session.
-- **`PluginUiSpec.tab`** — a left-rail tab. Its Screen receives `PluginScreenProps`: the
-  open canvas entry, `apiUrl()` resolution, `openChat()` (drafts a prompt into the chat tab;
-  the user's send click is the confirm gate), and the neutral `tokenSources` registry.
+- **`PluginUiSpec.propsSections`** — an integration's real surface today: sections a
+  plugin appends to the end of the right panel's **Props** tab for the current selection,
+  rendered collapsible in `order` then `id` order. This is where the Figma integration
+  actually lives now — a "sync" section with push/pull/status for the selected component.
+- **`PluginUiSpec.selectionContext`** — a contributor that adds facts (and, on send, a
+  prompt snippet) to the selection context surfaced alongside the Props/Code panels and
+  drafted chat prompts. Figma uses this to report plugin connection status.
+- **`PluginUiSpec.serializeEntry`** — serializes a rendered entry's DOM subtree into the
+  integration's transfer format; the Figma push flow reads this to build what it sends.
+- **`PluginUiSpec.tab`** — a left-rail tab, `Screen` typed against `PluginScreenProps`
+  (`apiUrl()`, `openChat()`, the open entry, `tokenSources`). Still part of the type
+  contract, and the built-in Figma integration still declares one — but **full view's
+  current UI does not render integration tabs**. The left rail is fixed to
+  Chat/Changes/Tokens/Flags; `getIntegrationTabs()` resolves a tab list from the enabled
+  integrations, but nothing in full view calls it today. Treat `tab` as reserved for a
+  future mount point, not a working extension point right now — build against
+  `propsSections`/`selectionContext` instead.
 - **`TokenSource`** — theme adapters publish neutral token facts (names, per-mode values,
   CSS vars); integrations map them to their own tool's naming. This is how the Figma
   variable sync works without the theme adapter knowing about Figma.

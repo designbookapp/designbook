@@ -21,14 +21,14 @@ loads `designbookPlugin()`) listens on the **app port**. You don't open that por
 `designbook dev` runs the sidecar on a **stable port** and reverse-proxies the app behind it:
 
 - `/__designbook/api/*` is served by the sidecar itself — the Pi agent, Figma bridge,
-  worktree/branch instances, and the write-back endpoints the canvas uses. The injected
+  worktree/branch instances, and the write-back endpoints full view uses. The injected
   client targets this namespace automatically.
 - everything else — **including your app's own `/api/*`** — is proxied through to your app's
   dev server. designbook no longer intercepts plain `/api`, so an app with its own same-origin
   `/api` keeps working. (The sidecar also runs a **direct api port** at `--port` + 1 where
   plain `/api/*` is designbook's, for cross-origin use.)
 
-The result is **one URL** for the whole workbench. It stays stable across app restarts and across
+The result is **one URL** for the whole thing. It stays stable across app restarts and across
 worktree/branch switches, so you never chase a changing port.
 
 :::tip[Open the sidecar URL, not the app port]
@@ -46,10 +46,22 @@ comes back, a normal reload returns you to the app.
 
 ## Deep links
 
-`/__designbook/component/<setId>.<ComponentKey>` is a deep link that **auto-expands the overlay and
-navigates to that component**. For example, `…/__designbook/component/primitives.Card` opens the
-workbench straight onto the `Card` entry in the `primitives` set. Handy for sharing a link to a
-specific component or wiring the workbench into other tooling.
+`/__designbook` and `/__designbook/component/<setId>.<ComponentKey>` are deep links that
+**auto-expand full view** on load — bootstrapping via a `sessionStorage` flag and a redirect to
+`/`, so the app's own URL is never touched.
+
+:::caution[The component-id suffix is currently a no-op]
+The `<setId>.<ComponentKey>` suffix (e.g. `primitives.Card`) is still parsed, round-tripped
+through `sessionStorage`, and read back on boot, but it's discarded rather than acted on. It used
+to navigate straight to that entry on the old browsable component canvas; that canvas is retired
+in the full-view rewrite, and nothing has replaced the "land on this specific component" behavior
+yet. Today `/__designbook/component/<anything>` and bare `/__designbook` do the same thing: expand
+full view wherever your app already is. If you were relying on the component target, that part no
+longer works — only the auto-expand does.
+:::
+
+Handy for wiring an auto-expand link (e.g. from other tooling) into your app; not currently useful
+for linking to a specific component.
 
 ## HMR-defer & reload rehydration
 
