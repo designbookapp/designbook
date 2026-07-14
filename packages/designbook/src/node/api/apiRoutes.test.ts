@@ -174,6 +174,38 @@ describe("sandbox source-owner lookup (read-only)", () => {
     expect(noMatch.status).toBe(200);
     expect(JSON.parse(noMatch.body)).toEqual({});
   });
+
+  it("skips a barrel's re-export and resolves the real definition file (bounded scan)", async () => {
+    // `src/index.ts` sorts BEFORE `src/wallet/WalletSheet.tsx` in the bounded
+    // scan's alphabetical walk, so a scanner that can't tell a re-export from
+    // a local list export would match the barrel first and stop there — the
+    // barrel has no JSX for WalletSheet, so pins/drill/code-panel would point
+    // at the wrong file. `moduleExportsName` must skip `export { X } from
+    // "./y"` and keep scanning to the file that actually defines X.
+    const { root, configPath } = projectWithConfig(
+      "export default { sets: [] };",
+    );
+    mkdirSync(join(root, "src", "wallet"), { recursive: true });
+    writeFileSync(
+      join(root, "src", "index.ts"),
+      'export { WalletSheet } from "./wallet/WalletSheet";\n',
+    );
+    writeFileSync(
+      join(root, "src", "wallet", "WalletSheet.tsx"),
+      "export function WalletSheet() { return null; }\n",
+    );
+    const api = createApi({ configPath, projectRoot: root, port: 8802 });
+    const result = await call(
+      api,
+      "GET",
+      "/api/sandbox/source-owner?names=WalletSheet",
+    );
+    expect(result.status).toBe(200);
+    expect(JSON.parse(result.body)).toEqual({
+      file: "src/wallet/WalletSheet.tsx",
+      exportName: "WalletSheet",
+    });
+  });
 });
 
 describe("figma integration routes (canonical + alias)", () => {

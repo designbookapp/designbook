@@ -980,13 +980,43 @@ function sanitizeCapturedValue(
   return value;
 }
 
-/** True when `source` exports `name` (declaration or export-list forms). */
+/** True when `source` exports `name` (declaration or export-list forms —
+ * INCLUDING re-exports: `export { X } from "./y"` counts, since importing
+ * `X` from `source`'s own path is legitimate JS regardless of where it's
+ * defined). Used to validate a specific ALREADY-KNOWN file (a capture hint,
+ * an AI-generated artifact) still exposes the name — not to pick a winner
+ * among several candidate files (see `moduleDefinesName` for that). */
 function moduleExportsName(source: string, name: string): boolean {
   const declaration = new RegExp(
     `export\\s+(?:async\\s+)?(?:function|const|class|let|var|enum)\\s+${name}\\b`,
   );
   const list = new RegExp(`export\\s*\\{[^}]*\\b${name}\\b[^}]*\\}`);
   return declaration.test(source) || list.test(source);
+}
+
+/**
+ * True when `source` DEFINES `name` — stricter than `moduleExportsName`: a
+ * list-export match only counts when it has NO trailing `from` clause.
+ * `export { X } from "./y"` is a RE-EXPORT — X is defined in "./y", not this
+ * file. Used when choosing the OWNER among several candidate files (export
+ * index lookups, the bounded source scan): without this, a barrel
+ * (`libs/x/src/index.ts` re-exporting every component) would verify as the
+ * "owner" of names it merely re-exports, pointing pins/drill/code-panel at
+ * the barrel (no JSX to locate) instead of the real definition file.
+ */
+function moduleDefinesName(source: string, name: string): boolean {
+  const declaration = new RegExp(
+    `export\\s+(?:async\\s+)?(?:function|const|class|let|var|enum)\\s+${name}\\b`,
+  );
+  if (declaration.test(source)) return true;
+  const list = new RegExp(
+    `export\\s*\\{[^}]*\\b${name}\\b[^}]*\\}\\s*(from\\s*['"][^'"]*['"])?`,
+    "g",
+  );
+  for (const match of source.matchAll(list)) {
+    if (!match[1]) return true;
+  }
+  return false;
 }
 
 const PROVIDER_SCAN_EXCLUDED_DIRS = new Set([
@@ -1073,7 +1103,7 @@ function makeExportResolver(repoRoot: string, appDir: string) {
     for (const repoRel of indexed.slice(0, 8)) {
       if (!containedPath(repoRoot, repoRel)) continue;
       const source = await sourceOf(repoRel);
-      if (source && moduleExportsName(source, name)) return repoRel;
+      if (source && moduleDefinesName(source, name)) return repoRel;
     }
     filesPromise ??= listAppSourceFiles(
       appDir ? join(repoRoot, appDir) : repoRoot,
@@ -1081,7 +1111,7 @@ function makeExportResolver(repoRoot: string, appDir: string) {
     for (const rel of await filesPromise) {
       const repoRel = appDir ? `${appDir}/${rel}` : rel;
       const source = await sourceOf(repoRel);
-      if (source && moduleExportsName(source, name)) return repoRel;
+      if (source && moduleDefinesName(source, name)) return repoRel;
     }
     return undefined;
   }

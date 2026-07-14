@@ -73,10 +73,43 @@ describe("scanComponentExports", () => {
     expect(scanComponentExports(code, "src/x.tsx")).toEqual(["ProductTitle"]);
   });
 
-  it("keeps re-exported names (both files legitimately export it)", () => {
+  it("does NOT index barrel re-exports as local definitions", () => {
+    // `export { X } from "./y"` re-exports a binding defined elsewhere — the
+    // barrel file itself does not define X. Indexing it here made the
+    // resolver see X in 2 files (the real definition + every barrel) and
+    // spam an ambiguity warning for nearly every component in a barrel repo.
     expect(
-      scanComponentExports('export { Button } from "./button";', "src/index.ts"),
-    ).toEqual(["Button"]);
+      scanComponentExports('export { WalletSheet } from "./components/WalletSheet";', "src/index.ts"),
+    ).toEqual([]);
+  });
+
+  it("does NOT index aliased re-exports (`export { X as Y } from ...`)", () => {
+    expect(
+      scanComponentExports('export { Button as PrimaryButton } from "./button";', "src/index.ts"),
+    ).toEqual([]);
+  });
+
+  it("does NOT index `export * from` / `export * as NS from` re-exports", () => {
+    expect(
+      scanComponentExports('export * from "./button";', "src/index.ts"),
+    ).toEqual([]);
+    expect(
+      scanComponentExports('export * as Wallet from "./wallet";', "src/index.ts"),
+    ).toEqual([]);
+  });
+
+  it("still indexes a bare local list export (`export { X }`, no from)", () => {
+    const code = "function CardHeader() {}\nexport { CardHeader };";
+    expect(scanComponentExports(code, "src/card.tsx")).toEqual(["CardHeader"]);
+  });
+
+  it("indexes only the local definition in a mixed local+re-export file", () => {
+    const code = [
+      "function CardHeader() {}",
+      "export { CardHeader };",
+      'export { CardBody } from "./card-body";',
+    ].join("\n");
+    expect(scanComponentExports(code, "src/index.ts")).toEqual(["CardHeader"]);
   });
 });
 

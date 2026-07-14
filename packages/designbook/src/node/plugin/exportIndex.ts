@@ -50,7 +50,11 @@ const DEFAULT_IDENTIFIER_EXPORT =
 
 const DEFAULT_ANY_EXPORT = /(?:^|\n)\s*export\s+default\b/;
 
-const LIST_EXPORT = /(?:^|\n)\s*export\s*\{([^}]*)\}/g;
+// Captures an optional trailing `from "specifier"` clause so re-exports
+// (`export { X } from "./y"`) can be told apart from local list exports
+// (`export { X }`) — a re-export is not a definition site; the real file
+// gets indexed when IT is transformed (or by the scan fallback).
+const LIST_EXPORT = /(?:^|\n)\s*export\s*\{([^}]*)\}\s*(from\s*['"][^'"]*['"])?/g;
 
 /**
  * Exported component-ish names of one module. `filePath` names the module for
@@ -65,6 +69,11 @@ function scanComponentExports(code: string, filePath: string): string[] {
   }
 
   for (const match of code.matchAll(LIST_EXPORT)) {
+    // `export { X } from "./y"` / `export { X as Y } from "./y"` re-exports a
+    // binding DEFINED elsewhere — not a definition site in this file. Skip it
+    // here; the barrel would otherwise look like it defines every component
+    // it re-exports, and the resolver sees the same name in 2 files.
+    if (match[2]) continue;
     // `export { A, b as C, D as default }` — the EXPORTED (post-`as`) name is
     // the identity consumers import; `default` falls through to inference.
     for (const piece of match[1].split(",")) {
