@@ -1,6 +1,6 @@
 {
   "name": "@designbookapp/designbook",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "description": "Your React app from every angle — edit theme tokens, copy, and feature flags on the running app; an embedded Pi coding agent lands every edit as code.",
   "keywords": [
     "design-tool",

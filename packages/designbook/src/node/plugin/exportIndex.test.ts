@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  collectImportedBindings,
   createExportIndex,
   isComponentName,
   isIndexableModuleId,
@@ -110,6 +111,60 @@ describe("scanComponentExports", () => {
       'export { CardBody } from "./card-body";',
     ].join("\n");
     expect(scanComponentExports(code, "src/index.ts")).toEqual(["CardHeader"]);
+  });
+
+  it("does NOT index the import-then-export barrel form (bare list export of an imported name)", () => {
+    // `import { X } from "./y"; export { X };` — no `from` clause on the
+    // export, so the earlier fix (inline `from` only) missed this. It's
+    // the MOST COMMON hand-written barrel shape, and also what esbuild
+    // lowers `export { X } from "./y"` to under vite dev.
+    const code = [
+      'import { WalletSheet } from "./components/WalletSheet";',
+      "export { WalletSheet };",
+    ].join("\n");
+    expect(scanComponentExports(code, "src/index.ts")).toEqual([]);
+  });
+
+  it("does NOT index an aliased import-then-export (`import { X as W } from ...; export { W as X };`)", () => {
+    const code = [
+      'import { WalletSheet as W } from "./components/WalletSheet";',
+      "export { W as WalletSheet };",
+    ].join("\n");
+    expect(scanComponentExports(code, "src/index.ts")).toEqual([]);
+  });
+
+  it("still indexes a name that is locally defined AND exported in a bare list", () => {
+    const code = [
+      'import { Unrelated } from "./unrelated";',
+      "function CardHeader() {}",
+      "export { CardHeader };",
+    ].join("\n");
+    expect(scanComponentExports(code, "src/card.tsx")).toEqual(["CardHeader"]);
+  });
+
+  it("indexes only the local definition when a file both re-exports an import (bare) and defines its own component", () => {
+    const code = [
+      'import { WalletSheet } from "./components/WalletSheet";',
+      "function CardHeader() {}",
+      "export { WalletSheet, CardHeader };",
+    ].join("\n");
+    expect(scanComponentExports(code, "src/index.ts")).toEqual(["CardHeader"]);
+  });
+});
+
+describe("collectImportedBindings", () => {
+  it("collects default, named (incl. aliased), namespace, and combined imports", () => {
+    const code = [
+      'import Foo from "./foo";',
+      'import { A, B as C } from "./ab";',
+      'import * as NS from "./ns";',
+      'import Default2, { D } from "./combo";',
+      'import Default3, * as NS2 from "./combo2";',
+      'import "./side-effect-only";',
+    ].join("\n");
+    expect([...collectImportedBindings(code)].sort()).toEqual(
+      ["A", "C", "D", "Default2", "Default3", "Foo", "NS", "NS2"].sort(),
+    );
   });
 });
 

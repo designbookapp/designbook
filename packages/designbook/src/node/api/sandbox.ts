@@ -54,6 +54,7 @@ import {
 } from "./variations.ts";
 import { dataFormatFor } from "./dataClassify.ts";
 import { lookupExportFiles } from "./exportIndexStore.ts";
+import { collectImportedBindings } from "../plugin/exportIndex.ts";
 import {
   GitRequiredError,
   altIdOfRef,
@@ -996,11 +997,15 @@ function moduleExportsName(source: string, name: string): boolean {
 
 /**
  * True when `source` DEFINES `name` — stricter than `moduleExportsName`: a
- * list-export match only counts when it has NO trailing `from` clause.
- * `export { X } from "./y"` is a RE-EXPORT — X is defined in "./y", not this
- * file. Used when choosing the OWNER among several candidate files (export
- * index lookups, the bounded source scan): without this, a barrel
- * (`libs/x/src/index.ts` re-exporting every component) would verify as the
+ * list-export match only counts when it has NO trailing `from` clause AND
+ * its LOCAL (pre-`as`) name isn't one `source` itself imported. Both
+ * `export { X } from "./y"` (X defined in "./y") and `import { X } from
+ * "./y"; export { X };` / `import { X as W } from "./y"; export { W as X
+ * };` (the import-then-export barrel form — also what esbuild lowers inline
+ * re-exports to under vite dev) are RE-EXPORTS, not definitions. Used when
+ * choosing the OWNER among several candidate files (export index lookups,
+ * the bounded source scan): without this, a barrel (`libs/x/src/index.ts`
+ * re-exporting every component, via either form) would verify as the
  * "owner" of names it merely re-exports, pointing pins/drill/code-panel at
  * the barrel (no JSX to locate) instead of the real definition file.
  */
@@ -1009,12 +1014,20 @@ function moduleDefinesName(source: string, name: string): boolean {
     `export\\s+(?:async\\s+)?(?:function|const|class|let|var|enum)\\s+${name}\\b`,
   );
   if (declaration.test(source)) return true;
-  const list = new RegExp(
-    `export\\s*\\{[^}]*\\b${name}\\b[^}]*\\}\\s*(from\\s*['"][^'"]*['"])?`,
-    "g",
-  );
+  const importedBindings = collectImportedBindings(source);
+  const list = /export\s*\{([^}]*)\}\s*(from\s*['"][^'"]*['"])?/g;
   for (const match of source.matchAll(list)) {
-    if (!match[1]) return true;
+    if (match[2]) continue; // inline re-export (`from` clause) — not a def
+    for (const piece of match[1].split(",")) {
+      const trimmed = piece.trim();
+      if (!trimmed) continue;
+      const parts = trimmed.split(/\s+as\s+/);
+      const local = parts[0].trim();
+      const exported = (parts[1] ?? parts[0]).trim();
+      if (exported !== name) continue;
+      if (local && importedBindings.has(local)) continue; // import-then-export
+      return true;
+    }
   }
   return false;
 }

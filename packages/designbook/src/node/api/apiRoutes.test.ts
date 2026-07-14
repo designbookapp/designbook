@@ -206,6 +206,73 @@ describe("sandbox source-owner lookup (read-only)", () => {
       exportName: "WalletSheet",
     });
   });
+
+  it("skips the import-then-export barrel form (bare list export, no `from`) and resolves the real file", async () => {
+    // Same adversarial ordering as above (barrel `src/index.ts` sorts before
+    // `src/wallet/WalletSheet.tsx`), but this barrel uses the MOST COMMON
+    // hand-written shape: `import { X } from "./y"; export { X };` — no
+    // `from` clause on the export statement itself, so it looks like a local
+    // list export unless `moduleDefinesName` also checks the module's own
+    // imports. This is also what esbuild lowers inline re-exports to under
+    // vite dev, so it covers the transformed-inline case too.
+    const { root, configPath } = projectWithConfig(
+      "export default { sets: [] };",
+    );
+    mkdirSync(join(root, "src", "wallet"), { recursive: true });
+    writeFileSync(
+      join(root, "src", "index.ts"),
+      [
+        'import { WalletSheet } from "./wallet/WalletSheet";',
+        "export { WalletSheet };",
+        "",
+      ].join("\n"),
+    );
+    writeFileSync(
+      join(root, "src", "wallet", "WalletSheet.tsx"),
+      "export function WalletSheet() { return null; }\n",
+    );
+    const api = createApi({ configPath, projectRoot: root, port: 8802 });
+    const result = await call(
+      api,
+      "GET",
+      "/api/sandbox/source-owner?names=WalletSheet",
+    );
+    expect(result.status).toBe(200);
+    expect(JSON.parse(result.body)).toEqual({
+      file: "src/wallet/WalletSheet.tsx",
+      exportName: "WalletSheet",
+    });
+  });
+
+  it("skips an aliased import-then-export barrel and resolves the real file", async () => {
+    const { root, configPath } = projectWithConfig(
+      "export default { sets: [] };",
+    );
+    mkdirSync(join(root, "src", "wallet"), { recursive: true });
+    writeFileSync(
+      join(root, "src", "index.ts"),
+      [
+        'import { WalletSheet as W } from "./wallet/WalletSheet";',
+        "export { W as WalletSheet };",
+        "",
+      ].join("\n"),
+    );
+    writeFileSync(
+      join(root, "src", "wallet", "WalletSheet.tsx"),
+      "export function WalletSheet() { return null; }\n",
+    );
+    const api = createApi({ configPath, projectRoot: root, port: 8802 });
+    const result = await call(
+      api,
+      "GET",
+      "/api/sandbox/source-owner?names=WalletSheet",
+    );
+    expect(result.status).toBe(200);
+    expect(JSON.parse(result.body)).toEqual({
+      file: "src/wallet/WalletSheet.tsx",
+      exportName: "WalletSheet",
+    });
+  });
 });
 
 describe("figma integration routes (canonical + alias)", () => {

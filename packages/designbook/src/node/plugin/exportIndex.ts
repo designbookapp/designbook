@@ -56,6 +56,46 @@ const DEFAULT_ANY_EXPORT = /(?:^|\n)\s*export\s+default\b/;
 // gets indexed when IT is transformed (or by the scan fallback).
 const LIST_EXPORT = /(?:^|\n)\s*export\s*\{([^}]*)\}\s*(from\s*['"][^'"]*['"])?/g;
 
+// The import CLAUSE (everything between `import` and `from "specifier"`) —
+// side-effect imports (`import "..."`, no `from`) never match, which is
+// correct: they bind nothing.
+const IMPORT_CLAUSE = /(?:^|\n)\s*import\s+([^;]+?)\s+from\s*['"][^'"]*['"]/g;
+
+/**
+ * The set of LOCAL binding names an `import` statement introduces into this
+ * module's scope: `import Default from "x"` → `Default`; `import { A, B as
+ * C } from "x"` → `A`, `C` (the binding is the post-`as` name); `import * as
+ * NS from "x"` → `NS`; combinations (`import Default, { A } from "x"`)
+ * union the pieces. Used to tell a bare `export { local }` that RE-EXPORTS
+ * an imported name apart from one that exports a name this module actually
+ * defines — the import-then-export barrel form (`import { X } from "./y";
+ * export { X };`, and what esbuild lowers inline re-exports to) that
+ * `LIST_EXPORT`'s `from`-clause check alone doesn't catch.
+ */
+function collectImportedBindings(code: string): Set<string> {
+  const bindings = new Set<string>();
+  for (const match of code.matchAll(IMPORT_CLAUSE)) {
+    const clause = match[1].trim();
+    const namespaceMatch = clause.match(/\*\s*as\s+([A-Za-z_$][A-Za-z0-9_$]*)/);
+    if (namespaceMatch) bindings.add(namespaceMatch[1]);
+    const namedMatch = clause.match(/\{([^}]*)\}/);
+    if (namedMatch) {
+      for (const piece of namedMatch[1].split(",")) {
+        const trimmed = piece.trim();
+        if (!trimmed) continue;
+        const parts = trimmed.split(/\s+as\s+/);
+        const local = (parts[1] ?? parts[0]).trim();
+        if (local) bindings.add(local);
+      }
+    }
+    if (!clause.startsWith("{") && !clause.startsWith("*")) {
+      const defaultMatch = clause.match(/^([A-Za-z_$][A-Za-z0-9_$]*)/);
+      if (defaultMatch) bindings.add(defaultMatch[1]);
+    }
+  }
+  return bindings;
+}
+
 /**
  * Exported component-ish names of one module. `filePath` names the module for
  * default-export inference (an anonymous `export default` is indexed under the
@@ -63,6 +103,7 @@ const LIST_EXPORT = /(?:^|\n)\s*export\s*\{([^}]*)\}\s*(from\s*['"][^'"]*['"])?/
  */
 function scanComponentExports(code: string, filePath: string): string[] {
   const names = new Set<string>();
+  const importedBindings = collectImportedBindings(code);
 
   for (const match of code.matchAll(DECLARATION_EXPORT)) {
     if (isComponentName(match[1])) names.add(match[1]);
@@ -78,10 +119,16 @@ function scanComponentExports(code: string, filePath: string): string[] {
     // the identity consumers import; `default` falls through to inference.
     for (const piece of match[1].split(",")) {
       const parts = piece.trim().split(/\s+as\s+/);
+      const local = parts[0].trim();
       const exported = (parts[1] ?? parts[0]).trim();
       if (!exported) continue;
+      // A BARE list export (no `from`) whose LOCAL name is one this module
+      // IMPORTED is the "import-then-export" barrel form — the module re-
+      // exports a binding it never defined (and what esbuild lowers inline
+      // re-exports to under vite dev). Not a definition site; skip it same
+      // as the inline `from` form above.
+      if (local && importedBindings.has(local)) continue;
       if (exported === "default") {
-        const local = parts[0].trim();
         const name = isComponentName(local) ? local : nameFromFile(filePath);
         if (isComponentName(name)) names.add(name);
         continue;
@@ -197,6 +244,7 @@ function createExportIndex(): ExportIndex {
 }
 
 export {
+  collectImportedBindings,
   createExportIndex,
   isComponentName,
   isIndexableModuleId,
