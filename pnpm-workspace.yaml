@@ -5,5 +5,7 @@ packages:
   # install it separately: cd examples/mono-app && pnpm install
   - "!examples/mono-app"
   - docs-site
+  # Eval harnesses — private, never published (context-architecture baseline).
+  - evals/*
 onlyBuiltDependencies:
   - esbuild

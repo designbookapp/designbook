@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { buildHash } from "@designbook-ui/models/catalog/useCanvasRoute";
+import { subscribeApiEvents } from "@designbook-ui/models/events/eventBus";
 import { apiUrl, routing } from "@designbook-ui/designbook";
 
 type WorktreeSummary = {
@@ -140,23 +141,17 @@ function useWorktrees() {
   // agent start/end anywhere. Events from INACTIVE branches surface ONLY
   // here; the chat drops them from its thread.
   useEffect(() => {
-    const eventSource = new EventSource(apiUrl("/api/events"));
-    eventSource.addEventListener("branch-status", (messageEvent) => {
+    return subscribeApiEvents("branch-status", (messageEvent) => {
       try {
         setAgentStatuses(
           toAgentStatuses(
-            JSON.parse(
-              (messageEvent as MessageEvent).data as string,
-            ) as BranchStatusPayload,
+            JSON.parse(messageEvent.data as string) as BranchStatusPayload,
           ),
         );
       } catch {
         // Malformed payload — keep the previous badges.
       }
     });
-    return () => {
-      eventSource.close();
-    };
   }, []);
 
   async function switchBranch(

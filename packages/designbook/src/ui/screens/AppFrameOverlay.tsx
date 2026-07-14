@@ -18,7 +18,14 @@ import {
   frameLocalRectToScreenRect,
 } from "@designbook-ui/previewHost";
 import { CanvasOverlay, canvasHitLabel, type CanvasHitResult } from "./CanvasOverlay";
-import { canGoToFrameComponent } from "@designbook-ui/models/frame/appFrameHit";
+import {
+  canGoToFrameComponent,
+  canPromptFrameSandbox,
+} from "@designbook-ui/models/frame/appFrameHit";
+import { SandboxPromptBox } from "./sandbox/SandboxPromptBox";
+import { SandboxPinBubbles } from "./sandbox/SandboxPins";
+import { frameHitToSandboxSelection } from "./sandbox/promptTarget";
+import { useCatalogModel } from "@designbook-ui/models/catalog/CatalogProvider";
 
 const copy = {
   promptPi: "Prompt Pi",
@@ -89,6 +96,7 @@ function AppFrameOverlay({
   onSelect,
   selectedHit,
   onPromptPi,
+  pillOnly,
 }: {
   drillStack: CanvasHitResult[];
   onDrillChange: (stack: CanvasHitResult[]) => void;
@@ -99,9 +107,18 @@ function AppFrameOverlay({
    * page mode's docked Pi drawer — the full canvas UI has no floating drawer,
    * it has the sidebar chat tab). */
   onPromptPi: (hit: CanvasHitResult) => void;
+  /**
+   * Proto full-view mode: keep ONLY the selection outline + its dark name
+   * pill (CanvasOverlay's own label). Every other selection-attached chrome —
+   * the action chip, the sandbox prompt pop-up, the pin bubbles — is dropped;
+   * prompting happens in the full-view chat panel instead. Default (unset)
+   * keeps the normal App-page surface untouched.
+   */
+  pillOnly?: boolean;
 }) {
   const { iframe } = useFrameModel();
   const stageTransform = useStageTransform();
+  const { navigateSandbox } = useCatalogModel();
 
   if (!iframe) return null;
 
@@ -118,8 +135,12 @@ function AppFrameOverlay({
           elementAtFramePoint(iframe, clientX, clientY)
         }
         rectToScreen={(rect) => frameLocalRectToScreenRect(iframe, rect)}
+        // Everything under the pointer here is the USER'S app — DOM outside
+        // registered components resolves its unregistered authoring component
+        // (page shells) so element pins work anywhere (sandbox owner fallback).
+        sourceOwnerFallback
       />
-      {selectedHit ? (
+      {selectedHit && !pillOnly ? (
         <SelectionChip
           hit={selectedHit}
           stageTransform={stageTransform}
@@ -128,6 +149,28 @@ function AppFrameOverlay({
           onDismiss={() => onSelect(undefined)}
         />
       ) : null}
+      {/* Sandbox prompt box (docs/specs/sandbox.md, D1 — ADDITIVE below the
+          chip; nothing existing moves) + the per-pin comment bubbles. A
+          drilled DOM element shows the box too (v2): it creates an ELEMENT
+          pin against the owner (`entry` IS the owner for a DOM hit) — and so
+          does a DOM element with an UNREGISTERED source-resolved owner (page
+          shells; ownerKind "source", canPromptFrameSandbox). */}
+      {selectedHit && !pillOnly && canPromptFrameSandbox(selectedHit) ? (
+        <SandboxPromptBox
+          selection={frameHitToSandboxSelection(selectedHit)}
+          position={{
+            left: selectedHit.rect.x * stageTransform.scale + stageTransform.x,
+            top:
+              (selectedHit.rect.y + selectedHit.rect.height) *
+                stageTransform.scale +
+              stageTransform.y +
+              46,
+            mode: "absolute",
+          }}
+          onOpenCanvas={navigateSandbox}
+        />
+      ) : null}
+      {pillOnly ? null : <SandboxPinBubbles />}
     </>
   );
 }

@@ -11,6 +11,19 @@
  * chunks, per-chunk revert for free). A Diff/Edit toggle switches to the
  * plain editor; new/untracked files (no HEAD side) open plain; deleted files
  * render read-only, whole file red.
+ *
+ * Proto full-view extensions (all opt-in props — the old expanded workbench
+ * passes none of them and behaves exactly as before):
+ *   - `appearance="dark"`: dark CodeMirror theme for the `.dbproto` embed.
+ *   - `selectionDiff`: the SELECTED file also loads via `/api/file-diff`, so
+ *     a Diff/Edit toggle appears whenever a HEAD side exists (labeled
+ *     "vs HEAD"). Selections still open in Edit view.
+ *   - `layer`: the selection's file is overridden by an ACTIVE changeset
+ *     layer — the panel loads/edits the RESOLVED layer alternative instead
+ *     (save writes the LAYER file, never the real source) and the diff
+ *     compares the layer content against the real file (labeled with the
+ *     changeset). Resolution happens in the caller from the client sandbox
+ *     store; this panel only consumes the resolved target.
  */
 
 import { css } from "@codemirror/lang-css";
@@ -25,7 +38,7 @@ import CodeMirror, {
   type Extension,
   type ReactCodeMirrorRef,
 } from "@uiw/react-codemirror";
-import { RefreshCwIcon, RotateCcwIcon, SaveIcon } from "lucide-react";
+import { LayersIcon, RefreshCwIcon, RotateCcwIcon, SaveIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@designbook-ui/components/ui/button";
 import {
@@ -42,9 +55,13 @@ import { PanelSection } from "./panels";
 const copy = {
   codeEmpty: "Select an element on the canvas to view its source.",
   codeTitle: "Code",
+  diffHeadLabel: "Diff: working tree vs HEAD",
+  diffLayerLabel: "Diff: changeset layer vs real file",
   diffToggle: "Diff",
   discardLabel: "Discard edits",
   editToggle: "Edit",
+  layerBadge: "layer",
+  layerEditHint: "Edits save to the changeset layer — the real file is untouched.",
   loadError: "Unable to load the file.",
   loading: "Loading…",
   refreshLabel: "Reload file",
@@ -59,11 +76,24 @@ type FileState = {
   loading: boolean;
 };
 
-/** Static highlight styling for the component-definition line. */
+/** The selection's ACTIVE changeset-layer override, resolved by the caller:
+ * the repo-relative path of the layer's SELECTED alternative + a display
+ * label for the owning changeset. */
+type CodePanelLayerTarget = {
+  file: string;
+  label: string;
+};
+
+/** Static highlight styling for the component-definition line. The dark
+ * editor gets a fixed accent wash — the token-derived color-mix resolves to
+ * a near-black 12% overlay there (invisible on the dark background). */
 const targetLineTheme = EditorView.baseTheme({
-  ".cm-target-line": {
+  "&light .cm-target-line": {
     backgroundColor:
       "color-mix(in oklch, var(--color-primary) 12%, transparent)",
+  },
+  "&dark .cm-target-line": {
+    backgroundColor: "rgba(76, 141, 255, 0.16)",
   },
 });
 
@@ -82,20 +112,52 @@ function extensionForLanguage(language: CodeLanguage): Extension {
   }
 }
 
+/** GET a source file's content via `/api/file`; throws on any failure. */
+async function fetchFileContent(path: string): Promise<string> {
+  const response = await fetch(
+    apiUrl(`/api/file?path=${encodeURIComponent(path)}`),
+  );
+  const payload = (await response.json().catch(() => ({}))) as {
+    content?: string;
+    error?: string;
+  };
+  if (!response.ok || typeof payload.content !== "string") {
+    throw new Error(payload.error ?? copy.loadError);
+  }
+  return payload.content;
+}
+
 function CodePanel({
   selectedNode,
   diffFile,
+  appearance = "light",
+  selectionDiff = false,
+  layer,
 }: {
   selectedNode?: CanvasNodeSelection;
   /** Changes-tab override: show this file's diff instead of the selection. */
   diffFile?: string;
+  /** Editor theme — "dark" for the proto `.dbproto` embed. */
+  appearance?: "light" | "dark";
+  /** Load selections via `/api/file-diff` so the Diff toggle is available
+   * for the selected file too (not only Changes-row opens). */
+  selectionDiff?: boolean;
+  /** The selection's active layer override (see CodePanelLayerTarget). The
+   * Changes-tab `diffFile` override still wins when both are present. */
+  layer?: CodePanelLayerTarget;
 }) {
   const { definitionLine, usageLine, languageFor } = useSelectionModel();
   const codeTarget = selectedNode?.codeTarget;
   // The Changes-tab diff override wins; otherwise a drilled selection opens
   // its owner's file and highlights the usage line; otherwise the selection's
   // own file and its definition line.
-  const path = diffFile || codeTarget?.file || selectedNode?.path || undefined;
+  const sourcePath =
+    diffFile || codeTarget?.file || selectedNode?.path || undefined;
+  // Layer redirect (never under the Changes-tab override): the file the
+  // editor LOADS and SAVES is the resolved layer alternative.
+  const layerTarget = !diffFile && sourcePath ? layer : undefined;
+  const layerFile = layerTarget?.file;
+  const docPath = layerFile ?? sourcePath;
   const exportName = selectedNode?.exportName;
   const ctOwner = codeTarget?.ownerExportName;
   const ctName = codeTarget?.name;
@@ -103,9 +165,10 @@ function CodePanel({
 
   const [file, setFile] = useState<FileState>({ loading: false });
   const [draft, setDraft] = useState<string | undefined>();
-  /** HEAD-side content in diff mode: string = diffable, null = no HEAD side
-   * (new/untracked file), undefined = not in diff mode. */
-  const [head, setHead] = useState<string | null | undefined>();
+  /** The diff BASE: HEAD content (git modes) or the REAL file (layer mode).
+   * string = diffable, null = no base side (new/untracked file), undefined =
+   * no diff source loaded. */
+  const [original, setOriginal] = useState<string | null | undefined>();
   /** The working file is gone (deleted) — diff renders read-only. */
   const [deleted, setDeleted] = useState(false);
   const [viewMode, setViewMode] = useState<"diff" | "edit">("diff");
@@ -113,16 +176,17 @@ function CodePanel({
   const [saveError, setSaveError] = useState<string | undefined>();
   const editorRef = useRef<ReactCodeMirrorRef>(null);
 
-  // Rows always open in diff view (decision #3); re-arm per file.
+  // Changes rows always open in diff view (decision #3); selections open in
+  // the editor. Re-arm per target.
   useEffect(() => {
-    setViewMode("diff");
-  }, [diffFile]);
+    setViewMode(diffFile ? "diff" : "edit");
+  }, [diffFile, sourcePath, layerFile]);
 
   const load = useCallback(() => {
-    if (!path) {
+    if (!sourcePath || !docPath) {
       setFile({ loading: false });
       setDraft(undefined);
-      setHead(undefined);
+      setOriginal(undefined);
       setDeleted(false);
       return () => {};
     }
@@ -131,8 +195,38 @@ function CodePanel({
     setFile({ loading: true });
     setSaveError(undefined);
 
-    if (diffFile) {
-      void fetch(apiUrl(`/api/file-diff?path=${encodeURIComponent(diffFile)}`))
+    const fail = (error: unknown) => {
+      if (cancelled) return;
+      const message = error instanceof Error ? error.message : copy.loadError;
+      setFile({ error: message, loading: false });
+      setDraft(undefined);
+      setOriginal(undefined);
+    };
+
+    if (layerFile) {
+      // Layer mode: the doc is the layer alternative; the diff base is the
+      // REAL file (both plain /api/file reads — no git involved).
+      setDeleted(false);
+      void Promise.all([
+        fetchFileContent(layerFile),
+        fetchFileContent(sourcePath).catch(() => null),
+      ])
+        .then(([layerContent, realContent]) => {
+          if (cancelled) return;
+          setFile({ content: layerContent, loading: false });
+          setDraft(layerContent);
+          setOriginal(realContent);
+        })
+        .catch(fail);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    if (diffFile || selectionDiff) {
+      void fetch(
+        apiUrl(`/api/file-diff?path=${encodeURIComponent(sourcePath)}`),
+      )
         .then(async (response) => {
           const payload = (await response.json().catch(() => ({}))) as {
             head?: string | null;
@@ -147,7 +241,7 @@ function CodePanel({
           if (payload.unsupported) {
             setFile({ error: copy.unsupported, loading: false });
             setDraft(undefined);
-            setHead(undefined);
+            setOriginal(undefined);
             setDeleted(false);
             return;
           }
@@ -155,51 +249,30 @@ function CodePanel({
             typeof payload.working === "string" ? payload.working : "";
           setFile({ content: working, loading: false });
           setDraft(working);
-          setHead(typeof payload.head === "string" ? payload.head : null);
+          setOriginal(typeof payload.head === "string" ? payload.head : null);
           setDeleted(payload.working === null);
         })
-        .catch((error: unknown) => {
-          if (cancelled) return;
-          const message =
-            error instanceof Error ? error.message : copy.loadError;
-          setFile({ error: message, loading: false });
-          setDraft(undefined);
-          setHead(undefined);
-        });
+        .catch(fail);
 
       return () => {
         cancelled = true;
       };
     }
 
-    setHead(undefined);
+    setOriginal(undefined);
     setDeleted(false);
-    void fetch(apiUrl(`/api/file?path=${encodeURIComponent(path)}`))
-      .then(async (response) => {
-        const payload = (await response.json().catch(() => ({}))) as {
-          content?: string;
-          error?: string;
-        };
-        if (!response.ok || typeof payload.content !== "string") {
-          throw new Error(payload.error ?? copy.loadError);
-        }
-        if (!cancelled) {
-          setFile({ content: payload.content, loading: false });
-          setDraft(payload.content);
-        }
-      })
-      .catch((error: unknown) => {
+    void fetchFileContent(sourcePath)
+      .then((content) => {
         if (cancelled) return;
-        const message =
-          error instanceof Error ? error.message : copy.loadError;
-        setFile({ error: message, loading: false });
-        setDraft(undefined);
-      });
+        setFile({ content, loading: false });
+        setDraft(content);
+      })
+      .catch(fail);
 
     return () => {
       cancelled = true;
     };
-  }, [path, diffFile]);
+  }, [sourcePath, docPath, diffFile, selectionDiff, layerFile]);
 
   // Selection changes refetch and discard any unsaved edits in the previous
   // file — there is no per-panel draft persistence across selections.
@@ -209,7 +282,7 @@ function CodePanel({
     file.content !== undefined && draft !== undefined && draft !== file.content;
 
   const handleSave = useCallback(() => {
-    if (!path || draft === undefined) return;
+    if (!docPath || draft === undefined) return;
 
     setSaving(true);
     setSaveError(undefined);
@@ -217,7 +290,7 @@ function CodePanel({
     void fetch(apiUrl("/api/file"), {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ path, content: draft }),
+      body: JSON.stringify({ path: docPath, content: draft }),
     })
       .then(async (response) => {
         const payload = (await response.json().catch(() => ({}))) as {
@@ -229,7 +302,7 @@ function CodePanel({
         }
         setFile({ content: draft, loading: false });
         // Announce the write so the Changes tab refreshes (refresh signal #3).
-        notifyFileWritten(path);
+        notifyFileWritten(docPath);
       })
       .catch((error: unknown) => {
         const message =
@@ -237,7 +310,7 @@ function CodePanel({
         setSaveError(message);
       })
       .finally(() => setSaving(false));
-  }, [path, draft]);
+  }, [docPath, draft]);
 
   // Kept fresh so the stable save keymap always calls the latest save.
   const handleSaveRef = useRef(handleSave);
@@ -259,19 +332,23 @@ function CodePanel({
     return definitionLine(file.content, exportName);
   }, [diffFile, file.content, exportName, ctOwner, ctName, ctClassName, usageLine, definitionLine]);
 
-  // The unified diff: HEAD as the original, the (editable) draft as the doc.
-  // Only when a HEAD side exists — new/untracked files open plain (decision
-  // #3); the Diff/Edit toggle drops back to the plain editor on demand.
-  const diffActive =
-    Boolean(diffFile) && viewMode === "diff" && typeof head === "string";
+  // The unified diff: the base (HEAD or the real file) as the original, the
+  // (editable) draft as the doc. Only when a base side exists —
+  // new/untracked files open plain (decision #3); the Diff/Edit toggle drops
+  // back to the plain editor on demand.
+  const diffAvailable = typeof original === "string";
+  const diffActive = diffAvailable && viewMode === "diff";
   const diffExtension = useMemo(
-    () => (diffActive && typeof head === "string" ? unifiedMergeView({ original: head }) : []),
-    [diffActive, head],
+    () =>
+      diffActive && typeof original === "string"
+        ? unifiedMergeView({ original })
+        : [],
+    [diffActive, original],
   );
 
   const languageExtension = useMemo(
-    () => (path ? extensionForLanguage(languageFor(path)) : []),
-    [path, languageFor],
+    () => (docPath ? extensionForLanguage(languageFor(docPath)) : []),
+    [docPath, languageFor],
   );
 
   const saveKeymapExtension = useMemo(
@@ -341,7 +418,7 @@ function CodePanel({
   useEffect(() => {
     const view = editorRef.current?.view;
     if (view) scrollToTargetLine(view);
-  }, [scrollToTargetLine, path, exportName, ctOwner, ctName, ctClassName]);
+  }, [scrollToTargetLine, sourcePath, exportName, ctOwner, ctName, ctClassName]);
 
   return (
     // `fill`: the editor owns its scrolling, so the section must span the
@@ -350,13 +427,24 @@ function CodePanel({
     // the column (flex/grid auto minimum size) — wide lines and tall files
     // scroll INSIDE the editor.
     <PanelSection title={copy.codeTitle} fill>
-      {path ? (
+      {sourcePath ? (
         <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2">
           <div className="flex items-center justify-between gap-2">
-            <p className="min-w-0 truncate font-mono text-xs text-muted-foreground">
-              {path}
-            </p>
-            {diffFile && typeof head === "string" ? (
+            <div className="flex min-w-0 items-center gap-1.5">
+              <p className="min-w-0 truncate font-mono text-xs text-muted-foreground">
+                {sourcePath}
+              </p>
+              {layerTarget ? (
+                <span
+                  className="inline-flex shrink-0 items-center gap-1 rounded-sm bg-primary/15 px-1.5 py-0.5 text-[10px] font-medium text-primary"
+                  title={`${copy.layerEditHint}\n${layerTarget.file}`}
+                >
+                  <LayersIcon className="size-3" />
+                  {copy.layerBadge}: {layerTarget.label}
+                </span>
+              ) : null}
+            </div>
+            {diffAvailable ? (
               <ToggleGroup
                 type="single"
                 value={viewMode}
@@ -424,6 +512,11 @@ function CodePanel({
               </Button>
             )}
           </div>
+          {diffActive ? (
+            <p className="text-[10px] text-muted-foreground">
+              {layerTarget ? copy.diffLayerLabel : copy.diffHeadLabel}
+            </p>
+          ) : null}
           {file.loading ? (
             <p className="text-xs text-muted-foreground">{copy.loading}</p>
           ) : file.error ? (
@@ -436,7 +529,7 @@ function CodePanel({
                   value={draft}
                   className="h-full"
                   height="100%"
-                  theme="light"
+                  theme={appearance}
                   readOnly={deleted}
                   extensions={extensions}
                   onChange={setDraft}
@@ -457,3 +550,4 @@ function CodePanel({
 }
 
 export { CodePanel };
+export type { CodePanelLayerTarget };

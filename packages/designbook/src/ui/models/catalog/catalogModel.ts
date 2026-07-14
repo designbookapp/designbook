@@ -34,6 +34,9 @@ type CatalogNavigate = (nodeIds: string[], flowId?: string) => void;
  * provider's own route hook drives it; a no-op in fixture/cell mode. */
 type CatalogNavigateApp = (path: string) => void;
 
+/** The sandbox-canvas navigation action (docs/specs/sandbox.md). */
+type CatalogNavigateSandbox = (pinId: string) => void;
+
 /**
  * The canvas route the catalog OWNS. Live use fills these from
  * the provider-hosted `useCanvasRoute`; fixture/cell mode uses the empty route.
@@ -48,6 +51,8 @@ type CatalogRoute = {
   nodeIds: string[];
   /** App-page route; `undefined` for every non-app route. */
   appPath: string | undefined;
+  /** Sandbox-canvas route; `undefined` for every non-sandbox route. */
+  sandboxPinId: string | undefined;
 };
 
 const EMPTY_ROUTE: CatalogRoute = {
@@ -56,6 +61,7 @@ const EMPTY_ROUTE: CatalogRoute = {
   flowId: undefined,
   nodeIds: [],
   appPath: undefined,
+  sandboxPinId: undefined,
 };
 
 /**
@@ -89,6 +95,8 @@ type CatalogModel = CatalogData & CatalogRoute & {
   navigate: CatalogNavigate;
   /** App-page navigation. No-op in fixture/cell mode. */
   navigateApp: CatalogNavigateApp;
+  /** Sandbox-canvas navigation. No-op in fixture/cell mode. */
+  navigateSandbox: CatalogNavigateSandbox;
 };
 
 type CreateCatalogModelOptions = {
@@ -100,10 +108,13 @@ type CreateCatalogModelOptions = {
   navigate?: CatalogNavigate;
   /** Live App-page navigation; omitted in fixture/cell mode (no-op). */
   navigateApp?: CatalogNavigateApp;
+  /** Live sandbox navigation; omitted in fixture/cell mode (no-op). */
+  navigateSandbox?: CatalogNavigateSandbox;
 };
 
 const noopNavigate: CatalogNavigate = () => {};
 const noopNavigateApp: CatalogNavigateApp = () => {};
+const noopNavigateSandbox: CatalogNavigateSandbox = () => {};
 
 /**
  * Build a catalog model. Pure — no React, no globals; all lookups run over the
@@ -149,6 +160,7 @@ function createCatalogModel(options: CreateCatalogModelOptions): CatalogModel {
     },
     navigate: options.navigate ?? noopNavigate,
     navigateApp: options.navigateApp ?? noopNavigateApp,
+    navigateSandbox: options.navigateSandbox ?? noopNavigateSandbox,
   };
 }
 
@@ -158,6 +170,7 @@ export type {
   CatalogModel,
   CatalogNavigate,
   CatalogNavigateApp,
+  CatalogNavigateSandbox,
   CatalogRoute,
   CreateCatalogModelOptions,
 };

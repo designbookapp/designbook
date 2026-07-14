@@ -20,6 +20,10 @@ import {
   registerSelectionContributor,
   unregisterSelectionContributor,
 } from "@designbook-ui/models/selectionContext/registry";
+import {
+  registerPropsPanelSection,
+  unregisterPropsPanelSection,
+} from "@designbook-ui/models/propsPanel/sectionRegistry";
 import { builtinUiIntegrations } from "./builtins";
 
 /** The ui half of an integration as registered (lazy). */
@@ -42,6 +46,8 @@ let loaded: Array<{ name: string; spec: PluginUiSpec }> = [];
 let tabs: IntegrationTab[] = [];
 /** Selection-context contributor ids this registry registered (for reset). */
 let selectionContributorIds: string[] = [];
+/** Props-panel section ids this registry registered (for reset). */
+let propsSectionIds: string[] = [];
 
 function configuredValue(name: string): IntegrationConfigValue | undefined {
   const integrations = config.integrations as
@@ -98,6 +104,17 @@ async function initUiIntegrations(): Promise<void> {
     );
     selectionContributorIds.push(name);
   }
+
+  // Props-panel sections (PREVIEW): a plugin appends collapsible sections to
+  // the end of the props panel — namespaced under the integration so ids never
+  // collide across plugins.
+  for (const { name, spec } of loaded) {
+    for (const section of spec.propsSections ?? []) {
+      const id = `${name}:${section.id}`;
+      registerPropsPanelSection({ ...section, id });
+      propsSectionIds.push(id);
+    }
+  }
 }
 
 /** The resolved integration tabs (empty before initUiIntegrations). */
@@ -111,6 +128,8 @@ function resetUiIntegrations(): void {
   tabs = [];
   for (const id of selectionContributorIds) unregisterSelectionContributor(id);
   selectionContributorIds = [];
+  for (const id of propsSectionIds) unregisterPropsPanelSection(id);
+  propsSectionIds = [];
 }
 
 export {

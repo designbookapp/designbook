@@ -42,6 +42,26 @@ function resolveActiveSessionKey(params: {
   return activeBranch;
 }
 
+/**
+ * The wire `branch` tag of a sandbox event, from the event's OWN home
+ * (docs/specs/changesets-on-git.md branch topology): the primary checkout's
+ * home is untagged (absent = primary, wire compat); a branch worktree's home
+ * is tagged with its checked-out branch — which IS the session key, since
+ * branch worktrees are per-branch. `homeBranch` comes from the orchestrator's
+ * per-home git probe; when it hasn't resolved yet, `activeWireBranch`
+ * (the pre-fix emit-time behavior) is the fallback.
+ */
+function resolveSandboxWireBranch(params: {
+  homeRepoRoot: string;
+  homeBranch: string | undefined;
+  projectRoot: string;
+  activeWireBranch: string | undefined;
+}): string | undefined {
+  const { homeRepoRoot, homeBranch, projectRoot, activeWireBranch } = params;
+  if (resolve(homeRepoRoot) === resolve(projectRoot)) return undefined;
+  return homeBranch || activeWireBranch;
+}
+
 /** What the registry needs from a session to manage its lifecycle. */
 type SessionLike = {
   abort: () => Promise<void>;
@@ -212,5 +232,6 @@ export {
   createSessionRegistry,
   PRIMARY_SESSION_KEY,
   resolveActiveSessionKey,
+  resolveSandboxWireBranch,
 };
 export type { AgentStatus, CreatedSession, SessionEntry, SessionLike };

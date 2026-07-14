@@ -148,6 +148,10 @@ const ALLOWED_PROJECT_ROOT_LINES: Array<{ pattern: RegExp; why: string }> = [
     why: "serializeSession display fallback",
   },
   {
+    pattern: /return sessions\.peek\(activeSessionKey\(\)\)\?\.cwd \?\? projectRoot;/,
+    why: "UX v3 chat-history threads: transcripts live per SESSION cwd (the primary session's cwd IS projectRoot), not per file-op root",
+  },
+  {
     pattern: /getCurrentBranch\(projectRoot\)/,
     why: "worktree mgmt: the primary checkout's branch",
   },

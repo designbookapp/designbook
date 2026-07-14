@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildPagePromptPrefill,
   canGoToComponent,
+  canPromptSandbox,
   chipLabel,
   domLabel,
   nextToolState,
@@ -75,6 +76,78 @@ describe("canGoToComponent", () => {
   });
 });
 
+describe("canPromptSandbox (sandbox prompt-box guard)", () => {
+  const rect = { x: 0, y: 0, width: 1, height: 1 };
+  const anchor = {} as Element;
+  const componentHit: PageHit = {
+    kind: "component",
+    rect,
+    label: "Card",
+    ownerKind: "entry",
+    entryId: "product.ProductCard",
+    sourcePath: "src/Card.tsx",
+    instanceId: "product.ProductCard::1",
+  };
+  const entryElementHit: PageHit = {
+    kind: "dom",
+    rect,
+    label: "div.badges",
+    dom: { tag: "div", classes: ["badges"] },
+    ownerKind: "entry",
+    entryId: "product.ProductCard",
+    sourcePath: "src/Card.tsx",
+    exportName: "ProductCard",
+    instanceId: "product.ProductCard::1::dom:2",
+    anchor,
+  };
+  /** The bug's exact shape: HomePage's hero section — no registry entry. */
+  const sourceOwnerHit: PageHit = {
+    kind: "dom",
+    rect,
+    label: "section.rounded-xl",
+    dom: { tag: "section", classes: ["rounded-xl"] },
+    ownerKind: "source",
+    ownerNames: ["HomePage", "App"],
+    sourcePath: "",
+    exportName: "HomePage",
+    instanceId: "src:HomePage::dom:1",
+    anchor,
+  };
+
+  it("accepts registered component + registered-owner element hits (unchanged)", () => {
+    expect(canPromptSandbox(componentHit)).toBe(true);
+    expect(canPromptSandbox(entryElementHit)).toBe(true);
+  });
+
+  it("ACCEPTS a source-owner DOM hit — even without a client sourcePath", () => {
+    expect(canPromptSandbox(sourceOwnerHit)).toBe(true);
+    expect(
+      canPromptSandbox({ ...sourceOwnerHit, sourcePath: "src/pages/HomePage.tsx" }),
+    ).toBe(true);
+  });
+
+  it("rejects hits without the pieces a pin needs", () => {
+    // Raw DOM with no owner at all (non-React or unnamed chain).
+    expect(
+      canPromptSandbox({ kind: "dom", rect, label: "div", dom: { tag: "div" } }),
+    ).toBe(false);
+    // No live anchor → no element pin.
+    expect(canPromptSandbox({ ...sourceOwnerHit, anchor: undefined })).toBe(false);
+    // No instance id → no pin identity.
+    expect(
+      canPromptSandbox({ ...sourceOwnerHit, instanceId: undefined }),
+    ).toBe(false);
+    // No export name on a source owner → the server has nothing to scan for.
+    expect(
+      canPromptSandbox({ ...sourceOwnerHit, exportName: undefined }),
+    ).toBe(false);
+    // Component hits still require the registered identity.
+    expect(
+      canPromptSandbox({ ...componentHit, entryId: undefined }),
+    ).toBe(false);
+  });
+});
+
 describe("buildPagePromptPrefill", () => {
   const rect = { x: 0, y: 0, width: 1, height: 1 };
 
@@ -129,35 +202,37 @@ describe("buildPagePromptPrefill", () => {
 describe("nextToolState", () => {
   const off: ToolState = { tool: null, chatOpen: false };
 
-  it("toggles select and closes the drawer when arming", () => {
+  it("toggles select and leaves the drawer untouched (coexist)", () => {
     expect(nextToolState(off, { type: "toggleSelect" })).toEqual({
       tool: "select",
       chatOpen: false,
     });
+    // Arming select with the drawer OPEN keeps the drawer open.
     expect(
       nextToolState(
         { tool: null, chatOpen: true },
         { type: "toggleSelect" },
       ),
-    ).toEqual({ tool: "select", chatOpen: false });
+    ).toEqual({ tool: "select", chatOpen: true });
+    // Disarming preserves the drawer too.
     expect(
-      nextToolState({ tool: "select", chatOpen: false }, { type: "toggleSelect" }),
-    ).toEqual({ tool: null, chatOpen: false });
+      nextToolState({ tool: "select", chatOpen: true }, { type: "toggleSelect" }),
+    ).toEqual({ tool: null, chatOpen: true });
   });
 
-  it("toggles the drawer and disarms select when opening", () => {
+  it("toggles the drawer and KEEPS the armed tool (coexist)", () => {
     expect(
       nextToolState({ tool: "select", chatOpen: false }, { type: "toggleChat" }),
-    ).toEqual({ tool: null, chatOpen: true });
+    ).toEqual({ tool: "select", chatOpen: true });
     expect(
-      nextToolState({ tool: null, chatOpen: true }, { type: "toggleChat" }),
-    ).toEqual({ tool: null, chatOpen: false });
+      nextToolState({ tool: "select", chatOpen: true }, { type: "toggleChat" }),
+    ).toEqual({ tool: "select", chatOpen: false });
   });
 
-  it("promptPi opens the drawer and disarms select", () => {
+  it("promptPi opens the drawer and keeps the armed tool", () => {
     expect(
       nextToolState({ tool: "select", chatOpen: false }, { type: "promptPi" }),
-    ).toEqual({ tool: null, chatOpen: true });
+    ).toEqual({ tool: "select", chatOpen: true });
   });
 
   it("escape disarms the tool only when no chip is open", () => {
@@ -175,7 +250,7 @@ describe("nextToolState", () => {
     ).toEqual({ tool: "select", chatOpen: false });
   });
 
-  it("toggles the text tool, exclusive with select and the drawer", () => {
+  it("toggles the text tool, exclusive with select but NOT the drawer", () => {
     expect(nextToolState(off, { type: "toggleText" })).toEqual({
       tool: "text",
       chatOpen: false,
@@ -184,18 +259,18 @@ describe("nextToolState", () => {
     expect(
       nextToolState({ tool: "select", chatOpen: false }, { type: "toggleText" }),
     ).toEqual({ tool: "text", chatOpen: false });
-    // Arming text closes the drawer.
+    // Arming text KEEPS the drawer open (coexist).
     expect(
       nextToolState({ tool: null, chatOpen: true }, { type: "toggleText" }),
-    ).toEqual({ tool: "text", chatOpen: false });
-    // Toggling text off returns to no tool.
+    ).toEqual({ tool: "text", chatOpen: true });
+    // Toggling text off returns to no tool, drawer preserved.
     expect(
-      nextToolState({ tool: "text", chatOpen: false }, { type: "toggleText" }),
-    ).toEqual({ tool: null, chatOpen: false });
-    // Arming select from text swaps back.
+      nextToolState({ tool: "text", chatOpen: true }, { type: "toggleText" }),
+    ).toEqual({ tool: null, chatOpen: true });
+    // Arming select from text swaps back, drawer preserved.
     expect(
-      nextToolState({ tool: "text", chatOpen: false }, { type: "toggleSelect" }),
-    ).toEqual({ tool: "select", chatOpen: false });
+      nextToolState({ tool: "text", chatOpen: true }, { type: "toggleSelect" }),
+    ).toEqual({ tool: "select", chatOpen: true });
   });
 
   it("escape disarms the text tool too (when no chip is open)", () => {

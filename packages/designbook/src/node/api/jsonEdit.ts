@@ -179,4 +179,14 @@ function setJsonValue(
   return `${JSON.stringify(root, null, 2)}${trailingNewline}`;
 }
 
-export { replaceJsonStringValue, replaceJsonValue, setJsonValue };
+/**
+ * Whether `keyPath` already resolves to a value in `raw` — the mechanical
+ * add-vs-mutate signal the JSON write endpoint surfaces (present = a mutate,
+ * absent = an add, exactly what `setJsonValue` decides internally). Returns
+ * false when `raw` isn't a JSON object or the path is missing.
+ */
+function jsonKeyExists(raw: string, keyPath: string): boolean {
+  return findInObject(raw, 0, keyPath.split(".")) !== undefined;
+}
+
+export { jsonKeyExists, replaceJsonStringValue, replaceJsonValue, setJsonValue };

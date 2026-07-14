@@ -24,8 +24,8 @@ const useWorktrees = readFileSync(
   resolve(here, "../../models/branch/useWorktrees.ts"),
   "utf8",
 );
-const branchSelector = readFileSync(
-  resolve(here, "../BranchSelector.tsx"),
+const fullView = readFileSync(
+  resolve(here, "../fullView/FullView.tsx"),
   "utf8",
 );
 
@@ -38,7 +38,7 @@ describe("chat branch binding (DesignChat)", () => {
 
   it("drops pi-events from other branches BEFORE any thread fold", () => {
     const handler = designChat.match(
-      /addEventListener\("pi-event"[\s\S]*?agent_start/,
+      /subscribeApiEvents\("pi-event"[\s\S]*?agent_start/,
     )?.[0];
     expect(handler, "pi-event handler must exist").toBeTruthy();
     expect(handler).toContain(
@@ -79,15 +79,61 @@ describe("wire shape (api.ts)", () => {
   });
 });
 
-describe("switcher badges (useWorktrees + BranchSelector)", () => {
-  it("useWorktrees listens for branch-status snapshots", () => {
-    expect(useWorktrees).toContain('addEventListener("branch-status"');
+describe("sandbox stream branch scoping (SandboxProvider + api.ts)", () => {
+  const sandboxProvider = readFileSync(
+    resolve(here, "../../models/sandbox/SandboxProvider.tsx"),
+    "utf8",
+  );
+  const sandboxNode = readFileSync(
+    resolve(here, "../../../node/api/sandbox.ts"),
+    "utf8",
+  );
+
+  it("the store drops other branches' sandbox events BEFORE any fold", () => {
+    const handler = sandboxProvider.match(
+      /subscribeApiEvents\("sandbox-event"[\s\S]*?handler\(event\)/,
+    )?.[0];
+    expect(handler, "sandbox-event handler must exist").toBeTruthy();
+    expect(handler).toContain(
+      "sandboxEventMatchesBranch(event, viewedBranchRef.current)",
+    );
   });
 
-  it("BranchSelector renders working/done badges for non-current branches", () => {
-    expect(branchSelector).toContain("agentStatuses[worktree.branch]");
-    expect(branchSelector).toContain("agentWorkingBadge");
-    expect(branchSelector).toContain("agentDoneBadge");
+  it("the provider tracks the viewed branch from state events", () => {
+    expect(sandboxProvider).toContain("viewedBranchRef.current =");
+  });
+
+  it("api.ts tags sandbox events from the event's OWN home, never emit-time state", () => {
+    expect(api).toContain("resolveSandboxWireBranch({");
+    expect(api).toContain("homeRepoRoot: __home.repoRoot");
+  });
+
+  it("conversation-turn is tagged with the TURN's session key", () => {
+    const block = api.match(
+      /type: "conversation-turn"[\s\S]*?\}\);/,
+    )?.[0];
+    expect(block, "conversation-turn broadcast must exist").toBeTruthy();
+    expect(block).toContain("turnBranch ? { branch: turnBranch } : {}");
+  });
+
+  it("every orchestrator emit names its home (no scope-less emits)", () => {
+    // emit(undefined, …) would fall back to emit-time active state — the
+    // exact bug class this seam closes. The only allowed bare emits are the
+    // function definition itself.
+    const bare = sandboxNode.match(/emit\(\s*\{/g) ?? [];
+    expect(bare).toEqual([]);
+  });
+});
+
+describe("switcher badges (useWorktrees + full-view BranchDropdown)", () => {
+  it("useWorktrees listens for branch-status snapshots", () => {
+    expect(useWorktrees).toContain('subscribeApiEvents("branch-status"');
+  });
+
+  it("the branch dropdown surfaces agent working/done for non-current branches", () => {
+    expect(fullView).toContain("agentStatuses[worktree.branch]");
+    expect(fullView).toContain('"agent working"');
+    expect(fullView).toContain('"agent finished"');
   });
 
   it("toAgentStatuses folds a snapshot defensively", () => {

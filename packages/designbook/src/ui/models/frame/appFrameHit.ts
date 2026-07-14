@@ -20,6 +20,13 @@ type FrameHit = {
   entry: { id: string; label: string; sourcePath: string; key: string };
   codeTarget?: CanvasCodeTarget;
   dom?: { tag: string; id?: string; classes?: string[] };
+  /** "entry" (default) = registered owner; "source" = unregistered authoring
+   * component resolved by the owner fallback (entry.id "" and possibly
+   * entry.sourcePath "" — the pin route resolves the file node-side). */
+  ownerKind?: "entry" | "source";
+  /** Live anchor element — structural (`unknown`) so this module stays
+   * DOM-free; presence is what the sandbox guard checks. */
+  anchor?: unknown;
 };
 
 /** css-ish label for a plain DOM hit: `tag#id` / `tag.class` / `tag`. */
@@ -32,7 +39,21 @@ function domLabel(dom: NonNullable<FrameHit["dom"]>): string {
 /** Whether "Go to component" applies — a component-level hit (not a plain DOM
  * drill level), mirroring the canvas context menu's own gate. */
 function canGoToFrameComponent(hit: FrameHit): boolean {
-  return hit.kind === "component";
+  return hit.kind === "component" && hit.ownerKind !== "source";
+}
+
+/**
+ * Whether the sandbox prompt box applies to an App-page frame hit — the
+ * App-page twin of pageTools' `canPromptSandbox`: a registered component hit,
+ * a drilled DOM element inside a registered owner, or a DOM element whose
+ * UNREGISTERED authoring component resolved via the source-owner fallback
+ * (`ownerKind: "source"`; sourcePath may be "" — resolved node-side).
+ */
+function canPromptFrameSandbox(hit: FrameHit): boolean {
+  if (hit.kind === "component") return Boolean(hit.entry.sourcePath);
+  if (!hit.anchor) return false;
+  if (hit.entry.sourcePath) return true;
+  return hit.ownerKind === "source" && Boolean(hit.entry.key);
 }
 
 /** Prefill text for the chat tab's Prompt Pi draft: a compact context header —
@@ -53,5 +74,10 @@ function buildFramePromptPrefill(hit: FrameHit): string {
   return `Re: ${tag} element inside <${hit.entry.label}> (not a registered component)\n\n`;
 }
 
-export { buildFramePromptPrefill, canGoToFrameComponent, domLabel };
+export {
+  buildFramePromptPrefill,
+  canGoToFrameComponent,
+  canPromptFrameSandbox,
+  domLabel,
+};
 export type { FrameHit };

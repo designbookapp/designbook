@@ -1,1 +1,1 @@
-export { Workbench } from "./Workbench";
+export { FullView } from "./fullView/FullView";

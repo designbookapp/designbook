@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  jsonKeyExists,
   replaceJsonStringValue,
   replaceJsonValue,
   setJsonValue,
@@ -183,5 +184,18 @@ describe("setJsonValue", () => {
     expect(
       setJsonValue(variants, "sunset.light.primary.deep", "x"),
     ).toBe(undefined);
+  });
+});
+
+describe("jsonKeyExists (add-vs-mutate signal)", () => {
+  it("is true for a present key path, false for an absent one", () => {
+    expect(jsonKeyExists(sample, "productCard.nights_one")).toBe(true);
+    expect(jsonKeyExists(sample, "productCard.saleBadge")).toBe(false);
+    expect(jsonKeyExists(sample, "nope.at.all")).toBe(false);
+  });
+
+  it("is false on non-object JSON", () => {
+    expect(jsonKeyExists("[1,2]", "0")).toBe(false);
+    expect(jsonKeyExists("not json", "a")).toBe(false);
   });
 });

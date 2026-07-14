@@ -57,10 +57,12 @@ async function figmaSelectionContext(
 }
 
 async function figmaUi(): Promise<PluginUiSpec> {
-  const [{ FigmaPanel }, { serializeComponent }] = await Promise.all([
-    import("./FigmaPanel"),
-    import("./serialize"),
-  ]);
+  const [{ FigmaPanel }, { FigmaSection }, { serializeComponent }] =
+    await Promise.all([
+      import("./FigmaPanel"),
+      import("./FigmaSection"),
+      import("./serialize"),
+    ]);
   return {
     tab: {
       label: "Figma",
@@ -76,6 +78,17 @@ async function figmaUi(): Promise<PluginUiSpec> {
         >[1]["meta"],
       }),
     selectionContext: (_sel, ctx) => figmaSelectionContext(ctx),
+    // The figma HOME in the full view: push/pull/status for the SELECTED
+    // component, appended below the core prop controls (the retired left-rail
+    // tab's replacement). Registered under `figma:` by the section registry.
+    propsSections: [
+      {
+        id: "sync",
+        title: "Figma",
+        order: 10,
+        Component: FigmaSection,
+      },
+    ],
   };
 }
 

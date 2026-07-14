@@ -87,6 +87,14 @@ type SerializeOptions = {
   };
   /** Token attribution rows. Omitted -> pushes still work, just unbound. */
   tokens?: SerializeToken[];
+  /**
+   * The entry component's live fiber, supplied when there is NO
+   * `[data-db-entry]` wrapper ancestor to walk down from (the full-view live
+   * app frame): the serializer then boundary-walks from this fiber directly
+   * instead of `getFiberFromDom(rootEl)` + a descendant lookup. `rootEl` is
+   * still used for zoom scale + token-var resolution.
+   */
+  entryFiber?: Fiber;
 };
 
 type SerializeResult = { tree: RenderTree; warnings: string[] };
@@ -859,54 +867,70 @@ async function serializeComponent(
   const scale = offsetWidth > 0 ? rootDomRect.width / offsetWidth : 1;
   const scaleInv = scale > 0 ? 1 / scale : 1;
 
-  // Locate the entry component's fiber under the wrapper, then its shallowest
-  // registered descendants (nested-component boundaries).
-  const wrapperFiber = getFiberFromDom(rootEl);
+  // Locate the entry component's fiber, then its shallowest registered
+  // descendants (nested-component boundaries). Two hosts:
+  //   - catalog preview: `rootEl` is the `[data-db-entry]` WRAPPER above the
+  //     component — walk down from its fiber to find the entry;
+  //   - full-view live frame: no wrapper, so the caller hands us the entry
+  //     component's fiber directly (`opts.entryFiber`).
   let entryHostRoots: Element[] = [rootEl];
   const boundary = new Map<Element, BoundaryOccurrence>();
   const occurrenceOrder = new Map<string, BoundaryOccurrence[]>();
 
-  if (wrapperFiber) {
-    const topLevel = collectSubtree(wrapperFiber, registryByRef, registryByName);
-    const entryNode =
-      topLevel.find((node) => node.entry.id === opts.componentId) ?? topLevel[0];
-    if (entryNode) {
-      const roots = collectHostRoots(entryNode.fiber);
-      if (roots.length > 0) entryHostRoots = roots;
-
-      // Slot-aware boundary walk: slot components (parent-authored children)
-      // serialize inline and the walk continues into them; other registered
-      // descendants become COMPONENT mains + instances.
-      for (const descendant of collectSlotAwareSubtree(
-        entryNode.fiber,
+  let entryFiber = opts.entryFiber;
+  if (!entryFiber) {
+    const wrapperFiber = getFiberFromDom(rootEl);
+    if (wrapperFiber) {
+      const topLevel = collectSubtree(
+        wrapperFiber,
         registryByRef,
         registryByName,
-        isSlotFiber,
-      )) {
-        const hostRoots = collectHostRoots(descendant.fiber);
-        if (hostRoots.length === 0) continue;
-        const occurrence: BoundaryOccurrence = {
-          entryId: descendant.entry.id,
-          entryName: descendant.entry.name,
-          occurrenceIndex: descendant.occurrenceIndex,
-          hostRoots,
-          slot: descendant.slot,
-        };
-        for (const root of hostRoots) boundary.set(root, occurrence);
-        if (descendant.slot) continue; // no main/instance for slots
-        const list = occurrenceOrder.get(occurrence.entryId) ?? [];
-        list.push(occurrence);
-        occurrenceOrder.set(occurrence.entryId, list);
+      );
+      const entryNode =
+        topLevel.find((node) => node.entry.id === opts.componentId) ??
+        topLevel[0];
+      if (entryNode) {
+        entryFiber = entryNode.fiber;
+      } else {
+        warnings.push(
+          "No registered component fiber found under the preview root; serializing the raw DOM.",
+        );
       }
     } else {
       warnings.push(
-        "No registered component fiber found under the preview root; serializing the raw DOM.",
+        "No React fiber on the preview root; nested components will be flattened.",
       );
     }
-  } else {
-    warnings.push(
-      "No React fiber on the preview root; nested components will be flattened.",
-    );
+  }
+
+  if (entryFiber) {
+    const roots = collectHostRoots(entryFiber);
+    if (roots.length > 0) entryHostRoots = roots;
+
+    // Slot-aware boundary walk: slot components (parent-authored children)
+    // serialize inline and the walk continues into them; other registered
+    // descendants become COMPONENT mains + instances.
+    for (const descendant of collectSlotAwareSubtree(
+      entryFiber,
+      registryByRef,
+      registryByName,
+      isSlotFiber,
+    )) {
+      const hostRoots = collectHostRoots(descendant.fiber);
+      if (hostRoots.length === 0) continue;
+      const occurrence: BoundaryOccurrence = {
+        entryId: descendant.entry.id,
+        entryName: descendant.entry.name,
+        occurrenceIndex: descendant.occurrenceIndex,
+        hostRoots,
+        slot: descendant.slot,
+      };
+      for (const root of hostRoots) boundary.set(root, occurrence);
+      if (descendant.slot) continue; // no main/instance for slots
+      const list = occurrenceOrder.get(occurrence.entryId) ?? [];
+      list.push(occurrence);
+      occurrenceOrder.set(occurrence.entryId, list);
+    }
   }
 
   const ctx: WalkContext = {

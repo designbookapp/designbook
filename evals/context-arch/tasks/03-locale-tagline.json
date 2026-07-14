@@ -1,0 +1,27 @@
+{
+  "id": "03-locale-tagline",
+  "description": "Locale copy edits across three JSON files, then a recall question about the ORIGINAL English copy (only seen in turn 1's file read). Tests long-range retention of read file contents.",
+  "turns": [
+    {
+      "user": "In locales/en-US/app.json, change home.heroTagline to exactly: \"Slow travel, close to the ground — trips that trade checklists for stories.\""
+    },
+    {
+      "user": "Update home.heroTagline in locales/es-419/app.json and locales/fr-FR/app.json to natural translations of the new English line."
+    },
+    {
+      "user": "Also change home.browseTrips in locales/en-US/app.json to \"Explore trips\"."
+    },
+    {
+      "user": "What was the ORIGINAL English heroTagline before our change? Quote it exactly. Do not edit or re-read anything — answer from what you already saw.",
+      "note": "retention probe: original value was visible in turn 1"
+    }
+  ],
+  "checks": [
+    { "type": "file_contains", "file": "locales/en-US/app.json", "pattern": "Slow travel, close to the ground" },
+    { "type": "file_not_contains", "file": "locales/en-US/app.json", "pattern": "Small-group trips led by local guides" },
+    { "type": "file_contains", "file": "locales/en-US/app.json", "pattern": "Explore trips" },
+    { "type": "final_response_matches", "turn": 3, "pattern": "Small-group trips led by local guides" },
+    { "type": "max_reads", "file": "en-US/app.json", "max": 2 }
+  ],
+  "judgeRubric": "Turn 4 asks for the pre-edit English heroTagline (\"Small-group trips led by local guides — coastlines, vineyards, and mountain trails at a human pace.\"), explicitly without re-reading. Flag redid_work if the agent re-read files to answer turn 4 or re-did translations; flag contradicted_earlier_decision if any locale edit reverted or mangled the turn-1 copy."
+}

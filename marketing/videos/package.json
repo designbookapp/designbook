@@ -1,0 +1,21 @@
+{
+  "name": "designbook-instruction-video",
+  "private": true,
+  "description": "STUB — starter scaffold for the designbook explainer video, authored with egaki. Not wired into the pnpm workspace. See README.md before running.",
+  "scripts": {
+    "dev": "vite"
+  },
+  "dependencies": {
+    "egaki": "^0.8.0",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "remotion": "^4.0.475",
+    "@remotion/player": "^4.0.475",
+    "@remotion/media": "^4.0.475"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^6.0.2",
+    "typescript": "^6.0.2",
+    "vite": "^8.0.10"
+  }
+}

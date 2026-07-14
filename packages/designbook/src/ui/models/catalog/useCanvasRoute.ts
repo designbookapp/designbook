@@ -9,6 +9,9 @@ type CanvasRoute = {
    * frame cell. Mutually exclusive with flowId/nodeIds; `undefined` for every
    * other route. */
   appPath?: string;
+  /** Sandbox canvas route (docs/specs/sandbox.md) — the focused pin id.
+   * Mutually exclusive with the other detail routes, like `appPath`. */
+  sandboxPinId?: string;
 };
 
 /**
@@ -34,6 +37,9 @@ function parseSegments(segments: string[]): Omit<CanvasRoute, "branch"> {
     // `segments` are already decodeURIComponent-ed once by parseHashString, so
     // no further decoding here (matches the "flow"/"component" branches below).
     return { flowId: undefined, nodeIds: [], appPath: segments[1] || "/" };
+  }
+  if (segments[0] === "sandbox" && segments[1]) {
+    return { flowId: undefined, nodeIds: [], sandboxPinId: segments[1] };
   }
   if (segments[0] === "flow") {
     return {
@@ -72,10 +78,13 @@ function buildHash(
   nodeIds: string[],
   flowId?: string,
   appPath?: string,
+  sandboxPinId?: string,
 ) {
   const parts: string[] = [];
 
-  if (appPath !== undefined) {
+  if (sandboxPinId !== undefined) {
+    parts.push("sandbox", encodeURIComponent(sandboxPinId));
+  } else if (appPath !== undefined) {
     parts.push("app", encodeURIComponent(appPath));
   } else {
     const detailId = nodeIds[nodeIds.length - 1];
@@ -113,6 +122,8 @@ function buildHash(
  *   flow-free: the same component has one URL regardless of how it was reached)
  * - `#/b/<branch>/app/<encodedPath>` — the App page (injected mode
  *   only), showing a live same-origin frame of `<encodedPath>`
+ * - `#/b/<branch>/sandbox/<pinId>` — the sandbox canvas focused on one pin's
+ *   entry (docs/specs/sandbox.md)
  *
  * The `flow`/`component`/`app` prefixes namespace their id spaces so a flow, a
  * component, and an app route with the same id can't clash. Legacy un-prefixed
@@ -189,7 +200,7 @@ function useCanvasRoute(
     if (memory) return; // memory mode never writes the URL
     const branch = route.branch ?? currentBranch;
     if (!branch) return;
-    const canonical = `#${buildHash(branch, route.nodeIds, route.flowId, route.appPath)}`;
+    const canonical = `#${buildHash(branch, route.nodeIds, route.flowId, route.appPath, route.sandboxPinId)}`;
     if (window.location.hash !== canonical) {
       window.history.replaceState(null, "", canonical);
     }
@@ -222,14 +233,29 @@ function useCanvasRoute(
     window.location.hash = hash;
   }
 
+  /** Navigate to the sandbox canvas focused on `pinId` (docs/specs/sandbox.md). */
+  function navigateSandbox(pinId: string) {
+    const branch = route.branch ?? currentBranch;
+    const hash = buildHash(branch, [], undefined, undefined, pinId);
+    if (memory) {
+      const next = parseHashString(hash);
+      setRoute(next);
+      onRouteChange?.(next);
+      return;
+    }
+    window.location.hash = hash;
+  }
+
   return {
     branch: route.branch ?? currentBranch,
     urlBranch: route.branch,
     flowId: route.flowId,
     nodeIds: route.nodeIds,
     appPath: route.appPath,
+    sandboxPinId: route.sandboxPinId,
     navigate,
     navigateApp,
+    navigateSandbox,
   };
 }
 

@@ -127,6 +127,13 @@ looks unstyled:
   *scanning* that package's source. In Tailwind v4, add an `@source` to the css entry that
   imports your theme, e.g. `@source "../../packages/ui/src";` (path relative to the css file),
   so v4 generates the utilities those components use.
+- **Generated variants render unstyled (Tailwind, plugin/injected mode).** Design variations
+  and sandbox variants are written into `.designbook/variations/` and `.designbook/sandbox/`,
+  which may sit outside your Tailwind v4 source scope — utilities only a variant uses then
+  emit no CSS and the variant renders collapsed. Host mode handles this automatically; in
+  plugin (injected) mode add two lines to the css entry that imports your theme:
+  `@source "./.designbook/variations"; @source "./.designbook/sandbox";` (paths relative to
+  the css file).
 
 ## Test / story files loaded unexpectedly
 

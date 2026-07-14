@@ -1,0 +1,30 @@
+{
+  "id": "06-session-recap",
+  "description": "Read-then-edit session ending in a full-session recap (which files changed and why). Tests whole-session memory and honest reporting; recap must not claim un-made edits.",
+  "turns": [
+    {
+      "user": "Read src/components/ui/card.tsx and src/pages/HomePage.tsx and tell me briefly how cards are composed on the home page. Do NOT edit anything yet."
+    },
+    {
+      "user": "Selected canvas node context:\n- Label: Primitives · Card\n- Source path: src/components/ui/card.tsx\n\nUser request:\nSoften the card chrome: rounded-xl → rounded-lg, and shadow-sm → shadow-xs."
+    },
+    {
+      "user": "Selected canvas node context:\n- Label: Primitives · Card\n- Source path: src/components/ui/card.tsx\n\nUser request:\nTighten padding: px-4 → px-3 in CardHeader, CardContent and CardFooter (leave pt/pb alone)."
+    },
+    {
+      "user": "Recap the session: list every file we modified and, per file, what changed. Do not re-read anything — answer from memory. If a file was only read, say so.",
+      "note": "whole-session memory probe"
+    }
+  ],
+  "checks": [
+    { "type": "file_contains", "file": "src/components/ui/card.tsx", "pattern": "rounded-lg" },
+    { "type": "file_not_contains", "file": "src/components/ui/card.tsx", "pattern": "rounded-xl" },
+    { "type": "file_contains", "file": "src/components/ui/card.tsx", "pattern": "shadow-xs" },
+    { "type": "file_contains", "file": "src/components/ui/card.tsx", "pattern": "card-header[\\s\\S]{0,200}px-3" },
+    { "type": "file_unchanged", "file": "src/pages/HomePage.tsx" },
+    { "type": "final_response_matches", "turn": 3, "pattern": "card\\.tsx" },
+    { "type": "max_reads", "file": "HomePage.tsx", "max": 1 },
+    { "type": "max_reads", "file": "card.tsx", "max": 2 }
+  ],
+  "judgeRubric": "Only card.tsx was modified (rounded-lg, shadow-xs, px-3); HomePage.tsx was read-only. The turn-4 recap must list card.tsx changes accurately and must NOT claim HomePage.tsx was edited. Flag redid_work if the agent re-read files for the recap despite being told not to; flag contradicted_earlier_decision if the recap misstates what was changed."
+}

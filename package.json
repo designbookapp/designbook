@@ -7,11 +7,13 @@
     "check-types": "pnpm -r check-types",
     "test": "pnpm -r test:run",
     "demo": "pnpm --filter '@designbookapp/designbook' build && pnpm --filter designbook-demo start",
+    "dogfood": "pnpm --filter '@designbookapp/designbook' build && pnpm --filter '@designbookapp/designbook' dogfood",
     "designbook:setup": "pnpm --filter '@designbookapp/designbook' build",
     "demo:lan": "pnpm --filter '@designbookapp/designbook' build && pnpm --filter designbook-demo start:lan",
     "example:i18n": "pnpm --filter '@designbookapp/designbook' build && pnpm --filter i18n-app design",
     "example:tw4": "pnpm --filter '@designbookapp/designbook' build && pnpm --filter tw4-app design",
     "example:init": "pnpm --filter '@designbookapp/designbook' build && pnpm --filter init-app design",
+    "example:mono": "pnpm --filter '@designbookapp/designbook' build && pnpm -C examples/mono-app install && pnpm -C examples/mono-app --filter web design",
     "demo:app": "pnpm --filter '@designbookapp/designbook' build && pnpm --filter designbook-demo dev"
   },
   "packageManager": "pnpm@10.5.2",

@@ -1,0 +1,986 @@
+<meta charset="utf-8">
+<title>Pi Session Viewer</title>
+<!--
+  Pi session transcript viewer — repo dev tool, NOT a shipped feature.
+  One self-contained file: drag a ~/.pi/agent/sessions/.../*.jsonl file in and
+  read the conversation as a story (thinking / tool calls / user input) instead
+  of raw JSON. Zero deps, no build, works over file://.
+  See README.md beside this file for format notes.
+-->
+<style>
+  :root {
+    --bg: #0e1013;
+    --bg-raise: #161a1f;
+    --bg-row: #14181d;
+    --border: #262c34;
+    --border-soft: #1e242b;
+    --fg: #d7dce3;
+    --fg-dim: #8b95a3;
+    --fg-faint: #5e6773;
+    --accent: #6ea8fe;
+    --user: #7ee2b8;
+    --tool: #c9a8fe;
+    --think: #8b95a3;
+    --err: #ff8a8a;
+    --err-bg: #2a1618;
+    --warn: #f2c14e;
+    --hl: #614b12;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--sans);
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ---------- drop zone ---------- */
+  #drop {
+    position: fixed; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    flex-direction: column; gap: 14px;
+    text-align: center; padding: 40px;
+    z-index: 50;
+  }
+  #drop.hide { display: none; }
+  #drop .card {
+    border: 1.5px dashed var(--border);
+    border-radius: 14px;
+    padding: 48px 60px;
+    background: var(--bg-raise);
+    max-width: 560px;
+    transition: border-color .12s, background .12s;
+  }
+  body.dragging #drop .card { border-color: var(--accent); background: #191f27; }
+  #drop h1 { margin: 0 0 6px; font-size: 20px; font-weight: 600; }
+  #drop p { margin: 4px 0; color: var(--fg-dim); font-size: 13px; }
+  #drop .pick {
+    margin-top: 16px; display: inline-block; cursor: pointer;
+    color: var(--accent); border: 1px solid var(--border);
+    border-radius: 8px; padding: 8px 16px; font-size: 13px;
+    background: var(--bg-row);
+  }
+  #drop .pick:hover { border-color: var(--accent); }
+
+  /* full-window drag overlay once a file is loaded */
+  body.dragging::after {
+    content: "drop to replace";
+    position: fixed; inset: 0; z-index: 200;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(14,16,19,.86);
+    border: 2px dashed var(--accent);
+    color: var(--accent); font-size: 18px; letter-spacing: .04em;
+  }
+
+  /* ---------- toolbar ---------- */
+  #bar {
+    position: sticky; top: 0; z-index: 30;
+    display: none; flex-wrap: wrap; align-items: center; gap: 8px;
+    padding: 8px 14px;
+    background: rgba(14,16,19,.92);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--border);
+  }
+  body.loaded #bar { display: flex; }
+  #bar .grp { display: flex; gap: 4px; align-items: center; }
+  #bar .sep { width: 1px; height: 20px; background: var(--border); margin: 0 4px; }
+  .btn {
+    font-family: var(--sans); font-size: 12px; cursor: pointer;
+    color: var(--fg-dim); background: var(--bg-row);
+    border: 1px solid var(--border); border-radius: 7px;
+    padding: 5px 10px;
+  }
+  .btn:hover { color: var(--fg); border-color: var(--fg-faint); }
+  .btn.on { color: var(--bg); background: var(--accent); border-color: var(--accent); }
+  #search {
+    font-family: var(--sans); font-size: 13px; color: var(--fg);
+    background: var(--bg-row); border: 1px solid var(--border);
+    border-radius: 7px; padding: 6px 10px; width: 220px; outline: none;
+  }
+  #search:focus { border-color: var(--accent); }
+  #searchInfo { font-size: 12px; color: var(--fg-faint); min-width: 60px; }
+  #barSpacer { flex: 1; }
+  #fname { font-size: 12px; color: var(--fg-faint); font-family: var(--mono);
+           overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 260px; }
+
+  /* ---------- layout ---------- */
+  #main { max-width: 900px; margin: 0 auto; padding: 20px 16px 120px; }
+
+  #sessHead {
+    border: 1px solid var(--border); border-radius: 12px;
+    background: var(--bg-raise); padding: 14px 16px; margin-bottom: 20px;
+  }
+  #sessHead .row1 { font-size: 15px; font-weight: 600; margin-bottom: 6px; }
+  #sessHead .meta { font-family: var(--mono); font-size: 12px; color: var(--fg-dim);
+                    display: flex; flex-wrap: wrap; gap: 4px 18px; }
+  #sessHead .meta b { color: var(--fg); font-weight: 500; }
+
+  /* turn separator */
+  .turn-sep {
+    display: flex; align-items: center; gap: 10px;
+    margin: 26px 0 12px; color: var(--fg-faint);
+    font-size: 11px; letter-spacing: .06em; text-transform: uppercase;
+  }
+  .turn-sep::before, .turn-sep::after {
+    content: ""; flex: 1; height: 1px; background: var(--border-soft);
+  }
+
+  /* generic row */
+  .item { margin: 8px 0; }
+  .item.hidden { display: none; }
+
+  .rowhead {
+    display: flex; align-items: baseline; gap: 8px;
+  }
+  .chip {
+    font-family: var(--mono); font-size: 10.5px; color: var(--fg-faint);
+    background: var(--bg-row); border: 1px solid var(--border-soft);
+    border-radius: 5px; padding: 1px 5px; white-space: nowrap; flex: none;
+  }
+  .chip.dur { color: var(--warn); }
+  .chip.cost { color: var(--user); }
+
+  /* user bubble */
+  .user .bubble {
+    background: #10241c; border: 1px solid #1d4235;
+    border-left: 3px solid var(--user);
+    border-radius: 10px; padding: 12px 14px; margin-top: 4px;
+    white-space: pre-wrap; word-break: break-word;
+  }
+  .tag { font-size: 11px; letter-spacing: .05em; text-transform: uppercase;
+         font-weight: 600; }
+  .user .tag { color: var(--user); }
+
+  /* assistant text bubble */
+  .atext .bubble {
+    background: var(--bg-row); border: 1px solid var(--border);
+    border-radius: 10px; padding: 12px 14px; margin-top: 4px;
+    white-space: pre-wrap; word-break: break-word;
+  }
+  .atext .tag { color: var(--accent); }
+
+  /* thinking row (subdued, collapsed) */
+  .think .head {
+    display: flex; align-items: baseline; gap: 8px; cursor: pointer;
+    color: var(--think); padding: 4px 0;
+  }
+  .think .head:hover .summary { color: var(--fg); }
+  .think .glyph { color: var(--fg-faint); font-size: 11px; flex: none; width: 12px; }
+  .think .kind { font-size: 11px; letter-spacing: .04em; text-transform: uppercase;
+                 color: var(--think); flex: none; }
+  .think .summary {
+    font-style: italic; color: var(--fg-dim); overflow: hidden;
+    display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4;
+    white-space: normal; flex: 1; min-width: 0;
+  }
+  .think .full {
+    display: none; margin: 4px 0 6px 20px; padding: 10px 12px;
+    background: var(--bg-row); border: 1px solid var(--border-soft);
+    border-radius: 8px; color: var(--fg-dim); white-space: pre-wrap;
+    word-break: break-word; font-size: 13px;
+    max-height: 16em; overflow-y: auto;
+  }
+  .think.open .full { display: block; }
+  /* open (the default) shows the scrollable box — the summary line would
+     duplicate it, so it collapses to just the row header */
+  .think.open .summary { display: none; }
+
+  /* tool call row */
+  .tool .head {
+    display: flex; align-items: baseline; gap: 8px; cursor: pointer;
+    padding: 5px 0;
+  }
+  .tool .glyph { color: var(--fg-faint); font-size: 11px; flex: none; width: 12px; }
+  .tool .status { flex: none; font-size: 12px; width: 14px; text-align: center; }
+  .tool .status.ok { color: var(--user); }
+  .tool .status.err { color: var(--err); }
+  .tool .status.pending { color: var(--fg-faint); }
+  .tool .name { font-family: var(--mono); font-weight: 600; color: var(--tool); flex: none; }
+  .tool .arg {
+    font-family: var(--mono); font-size: 12.5px; color: var(--fg-dim);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    flex: 1; min-width: 0;
+  }
+  .tool .result {
+    display: none; margin: 2px 0 8px 20px;
+  }
+  .tool.open .result { display: block; }
+  .tool .result pre {
+    margin: 4px 0 0; padding: 10px 12px; max-height: 420px; overflow: auto;
+    background: var(--bg-row); border: 1px solid var(--border-soft);
+    border-radius: 8px; font-family: var(--mono); font-size: 12px;
+    color: var(--fg-dim); white-space: pre-wrap; word-break: break-word;
+  }
+  .tool .result.err pre { border-color: #4a2226; background: var(--err-bg); color: var(--err); }
+  .tool .result .rbar { display: flex; gap: 8px; align-items: center; margin-top: 4px; }
+  .tool .result .rnote { font-size: 11px; color: var(--fg-faint); }
+
+  /* error row (always visible) */
+  .errrow {
+    border: 1px solid #4a2226; background: var(--err-bg);
+    border-left: 3px solid var(--err);
+    border-radius: 10px; padding: 10px 14px; margin-top: 4px;
+    color: var(--err); white-space: pre-wrap; word-break: break-word;
+    font-family: var(--mono); font-size: 12.5px;
+  }
+  .errrow .tag { color: var(--err); font-family: var(--sans); display: block; margin-bottom: 4px; }
+
+  /* meta row (model change, unknown types, parse errors) */
+  .meta-row {
+    display: flex; align-items: baseline; gap: 8px;
+    color: var(--fg-faint); font-size: 11.5px; font-family: var(--mono);
+    padding: 3px 0; opacity: .8;
+  }
+  .meta-row .dot { color: var(--fg-faint); }
+  .meta-row.parse { color: var(--warn); }
+
+  /* context block collapse inside user bubble */
+  .ctx { }
+  .ctx .ctxtoggle {
+    cursor: pointer; color: var(--fg-faint); font-size: 12px;
+    font-family: var(--mono); border-bottom: 1px dotted var(--fg-faint);
+    display: inline-block; margin-bottom: 8px;
+  }
+  .ctx .ctxtoggle:hover { color: var(--fg-dim); }
+  .ctx .ctxbody { display: none; margin: 0 0 10px; padding: 8px 10px;
+                  background: rgba(0,0,0,.25); border-radius: 6px;
+                  font-family: var(--mono); font-size: 11.5px; color: var(--fg-faint);
+                  white-space: pre-wrap; }
+  .ctx.open .ctxbody { display: block; }
+
+  /* clamp / show more — clamped sections stay SCROLLABLE (no fade hiding
+     content), "show more" removes the height cap entirely */
+  .clamp { position: relative; max-height: 22em; overflow-y: auto; }
+  .clamp.expanded { max-height: none; }
+  .more {
+    cursor: pointer; color: var(--accent); font-size: 12px; margin-top: 6px;
+    display: inline-block;
+  }
+  .more:hover { text-decoration: underline; }
+
+  /* search highlight */
+  mark { background: var(--hl); color: #fff; border-radius: 2px; }
+  mark.active { background: var(--warn); color: #000; }
+
+  /* stats footer */
+  #stats {
+    display: none; margin-top: 40px; padding-top: 18px;
+    border-top: 1px solid var(--border);
+    font-size: 12.5px; color: var(--fg-dim);
+  }
+  body.loaded #stats { display: block; }
+  #stats h3 { font-size: 12px; letter-spacing: .06em; text-transform: uppercase;
+              color: var(--fg-faint); margin: 0 0 10px; font-weight: 600; }
+  #stats .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px,1fr)); gap: 16px; }
+  #stats .k { color: var(--fg-faint); font-family: var(--mono); }
+  #stats .v { color: var(--fg); font-family: var(--mono); }
+  #stats table { border-collapse: collapse; }
+  #stats td { padding: 1px 10px 1px 0; }
+  .copybtn {
+    cursor: pointer; font-size: 11px; color: var(--fg-dim);
+    background: var(--bg-raise); border: 1px solid var(--border);
+    border-radius: 6px; padding: 3px 8px;
+  }
+  .copybtn:hover { color: var(--fg); border-color: var(--fg-faint); }
+</style>
+
+<div id="drop">
+  <div class="card">
+    <h1>Pi Session Viewer</h1>
+    <p>Drag a <code>.jsonl</code> session transcript here</p>
+    <p style="color:var(--fg-faint)">from <code>~/.pi/agent/sessions/…</code></p>
+    <label class="pick">choose file…<input id="file" type="file" accept=".jsonl,.json,.txt" hidden></label>
+  </div>
+</div>
+
+<div id="bar">
+  <div class="grp">
+    <button class="btn on" data-filter="thinking">thinking</button>
+    <button class="btn on" data-filter="tools">tools</button>
+    <button class="btn on" data-filter="text">text</button>
+  </div>
+  <div class="sep"></div>
+  <div class="grp">
+    <button class="btn" id="expandAll">expand all</button>
+    <button class="btn" id="collapseAll">collapse all</button>
+  </div>
+  <div class="sep"></div>
+  <input id="search" type="search" placeholder="search transcript…" spellcheck="false">
+  <span id="searchInfo"></span>
+  <div id="barSpacer"></div>
+  <span id="fname"></span>
+</div>
+
+<div id="main">
+  <div id="sessHead" style="display:none"></div>
+  <div id="thread"></div>
+  <div id="stats"></div>
+</div>
+
+<script>
+"use strict";
+
+/* ============================ helpers ============================ */
+const $ = (s, r=document) => r.querySelector(s);
+const el = (tag, cls, txt) => { const e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; };
+const esc = s => String(s).replace(/[&<>]/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;" }[c]));
+
+// compact elapsed since first message: 842ms / 12.4s / 1m 12s
+function fmtElapsed(ms) {
+  if (ms == null || isNaN(ms)) return "";
+  if (ms < 0) ms = 0;
+  if (ms < 1000) return Math.round(ms) + "ms";
+  const s = ms / 1000;
+  if (s < 60) return (s < 10 ? s.toFixed(1) : Math.round(s)) + "s";
+  const m = Math.floor(s / 60), r = Math.round(s % 60);
+  return m + "m" + (r ? " " + r + "s" : "");
+}
+// duration for a tool call (call->result delta)
+function fmtDur(ms) {
+  if (ms == null || isNaN(ms) || ms < 0) return "";
+  if (ms < 1000) return Math.round(ms) + "ms";
+  const s = ms / 1000;
+  if (s < 60) return (s < 10 ? s.toFixed(1) : Math.round(s)) + "s";
+  const m = Math.floor(s / 60), r = Math.round(s % 60);
+  return m + "m" + (r ? " " + r + "s" : "");
+}
+function firstLine(str, max=110) {
+  const s = String(str || "").trim();
+  const nl = s.indexOf("\n");
+  let out = nl === -1 ? s : s.slice(0, nl);
+  if (out.length > max) out = out.slice(0, max) + "…";
+  return out || "(empty)";
+}
+
+/* ---- smart one-line argument summary (path/command/pattern first) ---- */
+function toolArgSummary(name, args) {
+  if (args == null) return "";
+  if (typeof args === "string") return firstLine(args, 140);
+  if (typeof args !== "object") return String(args);
+  const a = args;
+  // prioritised keys, roughly mirroring designbook's getToolCallDetail
+  const order = ["command","cmd","path","file_path","filePath","pattern","query",
+                 "url","glob","prompt","description","old_string","content","name"];
+  for (const k of order) {
+    if (a[k] != null && String(a[k]).length) {
+      let v = firstLine(a[k], 140);
+      // show a couple of secondary hints for reads/greps
+      const extra = [];
+      if (a.offset != null || a.limit != null) {
+        if (a.offset != null) extra.push("@" + a.offset);
+        if (a.limit != null) extra.push("×" + a.limit);
+      }
+      if (k === "pattern" && a.path) extra.push("in " + firstLine(a.path, 60));
+      return v + (extra.length ? "  " + extra.join(" ") : "");
+    }
+  }
+  // fallback: compact json of first few keys
+  const keys = Object.keys(a).slice(0, 4);
+  return keys.map(k => k + "=" + firstLine(JSON.stringify(a[k]), 40)).join("  ");
+}
+
+// pull plain text out of a toolResult content array
+function resultText(content) {
+  if (content == null) return "";
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content.map(b => {
+      if (typeof b === "string") return b;
+      if (b && typeof b === "object") {
+        if (typeof b.text === "string") return b.text;
+        return "[" + (b.type || "block") + "]";
+      }
+      return String(b);
+    }).join("\n");
+  }
+  return JSON.stringify(content);
+}
+
+/* ============================ parse ============================ */
+// Parse JSONL leniently: every line becomes an entry; a bad line never kills render.
+function parseTranscript(raw) {
+  const lines = raw.split(/\r?\n/);
+  const entries = [];
+  lines.forEach((line, i) => {
+    const t = line.trim();
+    if (!t) return;
+    try {
+      entries.push({ lineNo: i + 1, obj: JSON.parse(t), error: null });
+    } catch (e) {
+      entries.push({ lineNo: i + 1, obj: null, error: e.message, raw: t });
+    }
+  });
+  return entries;
+}
+
+/* ============================ render ============================ */
+let ROOT_STATE = { firstTs: null };
+
+function render(entries, fileName) {
+  const thread = $("#thread");
+  thread.innerHTML = "";
+  const sess = entries.find(e => e.obj && e.obj.type === "session");
+
+  // baseline timestamp = first message timestamp (epoch ms)
+  let firstTs = null;
+  for (const e of entries) {
+    if (e.obj && e.obj.type === "message" && typeof e.obj.message.timestamp === "number") {
+      firstTs = e.obj.message.timestamp; break;
+    }
+  }
+  ROOT_STATE.firstTs = firstTs;
+
+  // index toolResults by toolCallId so tool rows can embed their outcome
+  const resultsById = new Map();
+  for (const e of entries) {
+    const m = e.obj && e.obj.type === "message" && e.obj.message;
+    if (m && m.role === "toolResult" && m.toolCallId) resultsById.set(m.toolCallId, m);
+  }
+
+  // previous-message timestamp per message (for assistant wall-time chips)
+  let _lastTs = null;
+  const prevTsByMsg = new Map();
+  for (const e of entries) {
+    const m = e.obj && e.obj.type === "message" && e.obj.message;
+    if (!m) continue;
+    prevTsByMsg.set(m, _lastTs);
+    if (typeof m.timestamp === "number") _lastTs = m.timestamp;
+  }
+
+  /* ---- session header ---- */
+  const head = $("#sessHead");
+  if (sess) {
+    const s = sess.obj;
+    head.style.display = "";
+    head.innerHTML = "";
+    head.appendChild(el("div", "row1", "Session " + shortId(s.id)));
+    const meta = el("div", "meta");
+    const add = (k, v) => { const w = el("span"); w.innerHTML = k + " <b>" + esc(v) + "</b>"; meta.appendChild(w); };
+    if (s.cwd) add("cwd", s.cwd);
+    if (s.timestamp) add("started", fmtClock(s.timestamp));
+    if (s.version != null) add("v", s.version);
+    add("lines", entries.length);
+    head.appendChild(meta);
+  } else {
+    head.style.display = "none";
+  }
+
+  /* ---- walk entries into rows ---- */
+  let turn = 0;
+  const stats = {
+    roles: {}, tools: {}, thinkChars: 0, parseErrors: 0,
+    minTs: null, maxTs: null, errors: 0, costUSD: 0
+  };
+
+  for (const e of entries) {
+    if (e.error) {
+      stats.parseErrors++;
+      thread.appendChild(metaRow("parse", "line " + e.lineNo + " — unparseable JSON: " + e.error, e.raw));
+      continue;
+    }
+    const o = e.obj;
+    if (!o || typeof o !== "object") { thread.appendChild(metaRow("meta", "line " + e.lineNo + " — non-object")); continue; }
+
+    if (o.type === "session") continue; // rendered in header
+    if (o.type === "model_change") {
+      thread.appendChild(metaRow("meta", "model → " + (o.modelId || "?") + (o.provider ? " (" + o.provider + ")" : "")));
+      continue;
+    }
+    if (o.type === "thinking_level_change") {
+      thread.appendChild(metaRow("meta", "thinking level → " + (o.thinkingLevel || "?")));
+      continue;
+    }
+    if (o.type !== "message") {
+      // unknown envelope type — subtle meta row, never crash
+      thread.appendChild(metaRow("meta", "unknown line type: " + esc(o.type) + " (line " + e.lineNo + ")", JSON.stringify(o, null, 2)));
+      continue;
+    }
+
+    // ---- message ----
+    const m = o.message;
+    if (!m || typeof m !== "object") { thread.appendChild(metaRow("meta", "line " + e.lineNo + " — message with no payload")); continue; }
+    const role = m.role || "?";
+    stats.roles[role] = (stats.roles[role] || 0) + 1;
+    const ts = typeof m.timestamp === "number" ? m.timestamp : null;
+    if (ts != null) { stats.minTs = stats.minTs == null ? ts : Math.min(stats.minTs, ts); stats.maxTs = stats.maxTs == null ? ts : Math.max(stats.maxTs, ts); }
+
+    if (role === "toolResult") continue; // embedded under its tool call
+
+    if (role === "user") {
+      turn++;
+      thread.appendChild(turnSep(turn, ts, firstTs, entries));
+      renderUser(thread, m, ts, firstTs);
+    } else if (role === "assistant") {
+      renderAssistant(thread, m, ts, firstTs, resultsById, stats, prevTsByMsg.get(m));
+      if (m.stopReason === "error" || m.errorMessage) {
+        stats.errors++;
+      }
+    } else {
+      renderUser(thread, m, ts, firstTs); // unexpected role: show as a bubble, labelled
+    }
+  }
+
+  renderStats(stats, sess);
+  applyFilters();
+}
+
+function shortId(id) { return id ? String(id).slice(0, 8) : "?"; }
+function fmtClock(iso) {
+  try { return new Date(iso).toLocaleString(); } catch { return String(iso); }
+}
+
+function metaRow(kind, text, detail) {
+  const r = el("div", "meta-row " + (kind === "parse" ? "parse" : ""));
+  r.appendChild(el("span", "dot", "•"));
+  const span = el("span", null, text);
+  if (detail) {
+    span.style.cursor = "pointer";
+    span.title = "click to log full to console";
+    span.onclick = () => console.log(detail);
+  }
+  r.appendChild(span);
+  r.dataset.kind = "meta";
+  return r;
+}
+
+function elapsedChip(ts, firstTs) {
+  if (ts == null || firstTs == null) return null;
+  return el("span", "chip", fmtElapsed(ts - firstTs));
+}
+
+function turnSep(n, ts, firstTs, entries) {
+  const s = el("div", "turn-sep");
+  s.dataset.kind = "turnsep";
+  let label = "Turn " + n;
+  s.appendChild(el("span", null, label));
+  s._turn = n; s._ts = ts;
+  return s;
+}
+
+/* ---- user message ---- */
+function renderUser(thread, m, ts, firstTs) {
+  const wrap = el("div", "item user"); wrap.dataset.kind = "user";
+  const hd = el("div", "rowhead");
+  hd.appendChild(el("span", "tag", m.role === "user" ? "User" : m.role));
+  const chip = elapsedChip(ts, firstTs); if (chip) hd.appendChild(chip);
+  wrap.appendChild(hd);
+
+  const text = messageText(m);
+  const bubble = el("div", "bubble");
+
+  // designbook canvas-context block: collapse by default, surface the request
+  const ctxMatch = /^Selected canvas node context:/.test(text.trimStart());
+  if (ctxMatch && /User request:/.test(text)) {
+    const idx = text.indexOf("User request:");
+    const ctxPart = text.slice(0, idx).trim();
+    const reqPart = text.slice(idx + "User request:".length).trim();
+    const ctx = el("div", "ctx");
+    const toggle = el("div", "ctxtoggle", "▸ canvas node context");
+    const body = el("div", "ctxbody"); body.textContent = ctxPart;
+    toggle.onclick = () => { ctx.classList.toggle("open"); toggle.textContent = (ctx.classList.contains("open") ? "▾" : "▸") + " canvas node context"; };
+    ctx.appendChild(toggle); ctx.appendChild(body);
+    bubble.appendChild(ctx);
+    bubble.appendChild(clampBlock(reqPart));
+  } else {
+    bubble.appendChild(clampBlock(text));
+  }
+  wrap.appendChild(bubble);
+  thread.appendChild(wrap);
+}
+
+// build a searchable, clampable text block
+function clampBlock(text) {
+  const frag = document.createDocumentFragment();
+  const box = el("div", "clamp searchable");
+  box.textContent = text;
+  frag.appendChild(box);
+  // only offer "show more" if it actually overflows (checked after insert)
+  const more = el("span", "more", "show more");
+  more.style.display = "none";
+  more.onclick = () => {
+    const exp = box.classList.toggle("expanded");
+    more.textContent = exp ? "show less" : "show more";
+  };
+  frag.appendChild(more);
+  // defer overflow check to next frame
+  requestAnimationFrame(() => {
+    if (box.scrollHeight > box.clientHeight + 4) more.style.display = "inline-block";
+  });
+  return frag;
+}
+
+function messageText(m) {
+  const c = m.content;
+  if (Array.isArray(c)) {
+    return c.map(b => {
+      if (typeof b === "string") return b;
+      if (b && b.type === "text") return b.text || "";
+      if (b && b.type) return "";
+      return "";
+    }).filter(Boolean).join("\n");
+  }
+  if (typeof c === "string") return c;
+  return "";
+}
+
+/* ---- assistant message cost / wall-time chips (from stored usage) ---- */
+function assistantMetaChips(m, ts, prevTs, stats) {
+  const chips = [];
+  const cost = m && m.usage && m.usage.cost ? m.usage.cost.total : null;
+  if (typeof cost === "number" && isFinite(cost) && cost > 0) {
+    if (stats) stats.costUSD += cost;
+    const c = el("span", "chip cost", "$" + (cost >= 1 ? cost.toFixed(2) : cost.toFixed(3)));
+    c.title = "message cost (from stored usage)";
+    chips.push(c);
+  }
+  if (typeof ts === "number" && typeof prevTs === "number" && ts >= prevTs) {
+    const w = el("span", "chip dur", fmtDur(ts - prevTs));
+    w.title = "wall time since previous message";
+    chips.push(w);
+  }
+  return chips;
+}
+
+/* ---- assistant message: thinking / toolCall / text blocks in order ---- */
+function renderAssistant(thread, m, ts, firstTs, resultsById, stats, prevTs) {
+  const c = Array.isArray(m.content) ? m.content : [];
+  // cost + wall time attach to the FIRST row of the message (one API call
+  // per assistant message); omitted entirely when usage/timestamps absent
+  const msgChips = assistantMetaChips(m, ts, prevTs, stats);
+  const attach = (row) => {
+    if (msgChips.length) {
+      const head = row.querySelector(".head, .rowhead");
+      if (head) { for (const ch of msgChips) head.appendChild(ch); msgChips.length = 0; }
+    }
+    return row;
+  };
+  for (const b of c) {
+    if (!b || typeof b !== "object") continue;
+    if (b.type === "thinking") {
+      stats.thinkChars += (b.thinking || "").length;
+      thread.appendChild(attach(thinkingRow(b, ts, firstTs)));
+    } else if (b.type === "toolCall") {
+      const tn = b.name || "tool";
+      stats.tools[tn] = (stats.tools[tn] || 0) + 1;
+      thread.appendChild(attach(toolRow(b, ts, firstTs, resultsById)));
+    } else if (b.type === "text") {
+      if ((b.text || "").trim()) thread.appendChild(attach(assistantTextRow(b, ts, firstTs)));
+    } else if (b.type) {
+      thread.appendChild(metaRow("meta", "assistant block: " + esc(b.type)));
+    }
+  }
+  // turn-level error (stopReason error / errorMessage) — always visible red row
+  if (m.stopReason === "error" || m.errorMessage) {
+    const r = el("div", "item errrow"); r.dataset.kind = "error";
+    r.appendChild(el("span", "tag", "Turn error" + (m.stopReason ? " (" + m.stopReason + ")" : "")));
+    const body = el("div", "searchable");
+    body.textContent = m.errorMessage || "(no message)";
+    r.appendChild(body);
+    thread.appendChild(r);
+  }
+}
+
+function thinkingRow(b, ts, firstTs) {
+  // Open by default: thinking reads as a scrollable box, no click needed
+  // (collapse-all still folds rows to one-line summaries for scanning).
+  // Empty thinking blocks stay collapsed — an open box would render blank.
+  const hasText = Boolean((b.thinking || "").trim());
+  const wrap = el("div", hasText ? "item think open" : "item think");
+  wrap.dataset.kind = "thinking";
+  const head = el("div", "head");
+  head.appendChild(el("span", "glyph", hasText ? "▾" : "▸"));
+  head.appendChild(el("span", "kind", "thinking"));
+  head.appendChild(el("span", "summary", firstLine(b.thinking, 140)));
+  const chip = elapsedChip(ts, firstTs); if (chip) head.appendChild(chip);
+  const full = el("div", "full searchable"); full.textContent = b.thinking || "";
+  head.onclick = () => {
+    const open = wrap.classList.toggle("open");
+    head.querySelector(".glyph").textContent = open ? "▾" : "▸";
+  };
+  wrap.appendChild(head); wrap.appendChild(full);
+  return wrap;
+}
+
+function assistantTextRow(b, ts, firstTs) {
+  const wrap = el("div", "item atext"); wrap.dataset.kind = "text";
+  const hd = el("div", "rowhead");
+  hd.appendChild(el("span", "tag", "Assistant"));
+  const chip = elapsedChip(ts, firstTs); if (chip) hd.appendChild(chip);
+  wrap.appendChild(hd);
+  const bubble = el("div", "bubble");
+  bubble.appendChild(clampBlock(b.text || ""));
+  wrap.appendChild(bubble);
+  return wrap;
+}
+
+const RESULT_LIMIT = 4096; // ~4KB truncation for embedded results
+
+function toolRow(b, ts, firstTs, resultsById) {
+  const wrap = el("div", "item tool"); wrap.dataset.kind = "tools";
+  const head = el("div", "head");
+  head.appendChild(el("span", "glyph", "▸"));
+
+  const res = b.id ? resultsById.get(b.id) : null;
+  const status = el("span", "status");
+  if (!res) { status.className = "status pending"; status.textContent = "○"; status.title = "no result recorded"; }
+  else if (res.isError) { status.className = "status err"; status.textContent = "✗"; }
+  else { status.className = "status ok"; status.textContent = "✓"; }
+  head.appendChild(status);
+
+  head.appendChild(el("span", "name", b.name || "tool"));
+  head.appendChild(el("span", "arg searchable", toolArgSummary(b.name, b.arguments)));
+
+  // per-tool duration (call ts -> result ts)
+  if (res && typeof res.timestamp === "number" && typeof ts === "number") {
+    const d = el("span", "chip dur", fmtDur(res.timestamp - ts));
+    d.title = "tool duration"; head.appendChild(d);
+  }
+  const chip = elapsedChip(ts, firstTs); if (chip) head.appendChild(chip);
+  wrap.appendChild(head);
+
+  // result body, collapsed by default
+  const rtextFull = res ? resultText(res.content) : "";
+  const rbox = el("div", "result" + (res && res.isError ? " err" : ""));
+  const pre = el("pre", "searchable");
+  const truncated = rtextFull.length > RESULT_LIMIT;
+  pre.textContent = truncated ? rtextFull.slice(0, RESULT_LIMIT) : rtextFull;
+  rbox.appendChild(pre);
+  const rbar = el("div", "rbar");
+  if (res) {
+    const copy = el("button", "copybtn", "copy full");
+    copy.onclick = ev => { ev.stopPropagation(); navigator.clipboard && navigator.clipboard.writeText(rtextFull); copy.textContent = "copied"; setTimeout(() => copy.textContent = "copy full", 1200); };
+    rbar.appendChild(copy);
+    const note = el("span", "rnote");
+    note.textContent = (truncated ? "showing first " + RESULT_LIMIT + " of " + rtextFull.length + " chars" : rtextFull.length + " chars") + (res.isError ? " · error" : "");
+    rbar.appendChild(note);
+  } else {
+    rbar.appendChild(el("span", "rnote", "no result recorded for this call"));
+  }
+  rbox.appendChild(rbar);
+  wrap.appendChild(rbox);
+
+  head.onclick = () => {
+    const open = wrap.classList.toggle("open");
+    head.querySelector(".glyph").textContent = open ? "▾" : "▸";
+  };
+  return wrap;
+}
+
+/* ---- stats footer ---- */
+function renderStats(stats, sess) {
+  const box = $("#stats");
+  box.innerHTML = "";
+  box.appendChild(el("h3", null, "Session stats"));
+  const grid = el("div", "grid");
+
+  // messages by role
+  const c1 = el("div");
+  c1.appendChild(el("div", "k", "messages by role"));
+  const t1 = el("table");
+  for (const [k, v] of Object.entries(stats.roles)) {
+    const tr = el("tr"); tr.appendChild(td("k", k)); tr.appendChild(td("v", v)); t1.appendChild(tr);
+  }
+  c1.appendChild(t1); grid.appendChild(c1);
+
+  // tool calls by name
+  const c2 = el("div");
+  c2.appendChild(el("div", "k", "tool calls by name"));
+  const t2 = el("table");
+  const toolEntries = Object.entries(stats.tools).sort((a, b) => b[1] - a[1]);
+  if (!toolEntries.length) t2.appendChild((()=>{const tr=el("tr");tr.appendChild(td("v","—"));return tr;})());
+  for (const [k, v] of toolEntries) {
+    const tr = el("tr"); tr.appendChild(td("k", k)); tr.appendChild(td("v", v)); t2.appendChild(tr);
+  }
+  c2.appendChild(t2); grid.appendChild(c2);
+
+  // totals
+  const c3 = el("div");
+  c3.appendChild(el("div", "k", "totals"));
+  const t3 = el("table");
+  const span = (stats.minTs != null && stats.maxTs != null) ? fmtElapsed(stats.maxTs - stats.minTs) : "—";
+  const rows = [
+    ["thinking chars", stats.thinkChars.toLocaleString()],
+    ["wall-clock span", span],
+    ["total cost", stats.costUSD > 0 ? "$" + stats.costUSD.toFixed(stats.costUSD >= 1 ? 2 : 3) : "—"],
+    ["turn errors", stats.errors],
+    ["parse errors", stats.parseErrors],
+  ];
+  for (const [k, v] of rows) { const tr = el("tr"); tr.appendChild(td("k", k)); tr.appendChild(td("v", v)); t3.appendChild(tr); }
+  c3.appendChild(t3); grid.appendChild(c3);
+
+  box.appendChild(grid);
+}
+function td(cls, txt) { const d = el("td", cls); d.textContent = txt; return d; }
+
+/* ============================ filters / toolbar ============================ */
+const filterState = { thinking: true, tools: true, text: true };
+
+function applyFilters() {
+  document.querySelectorAll("#thread .item").forEach(item => {
+    const k = item.dataset.kind;
+    if (k === "thinking") item.classList.toggle("hidden", !filterState.thinking);
+    else if (k === "tools") item.classList.toggle("hidden", !filterState.tools);
+    else if (k === "text") item.classList.toggle("hidden", !filterState.text);
+    // user / error always shown
+  });
+}
+
+document.querySelectorAll("#bar .btn[data-filter]").forEach(btn => {
+  btn.onclick = () => {
+    const f = btn.dataset.filter;
+    filterState[f] = !filterState[f];
+    btn.classList.toggle("on", filterState[f]);
+    applyFilters();
+  };
+});
+
+$("#expandAll").onclick = () => {
+  document.querySelectorAll("#thread .think, #thread .tool").forEach(w => {
+    w.classList.add("open");
+    const g = w.querySelector(".glyph"); if (g) g.textContent = "▾";
+  });
+  document.querySelectorAll("#thread .clamp").forEach(c => c.classList.add("expanded"));
+  document.querySelectorAll("#thread .ctx").forEach(c => c.classList.add("open"));
+};
+$("#collapseAll").onclick = () => {
+  document.querySelectorAll("#thread .think, #thread .tool").forEach(w => {
+    w.classList.remove("open");
+    const g = w.querySelector(".glyph"); if (g) g.textContent = "▸";
+  });
+  document.querySelectorAll("#thread .clamp").forEach(c => c.classList.remove("expanded"));
+  document.querySelectorAll("#thread .ctx").forEach(c => c.classList.remove("open"));
+};
+
+/* ============================ search ============================ */
+let searchHits = [];
+let searchIdx = -1;
+
+function clearSearch() {
+  // unwrap existing marks
+  document.querySelectorAll("#thread mark").forEach(mk => {
+    const p = mk.parentNode; p.replaceChild(document.createTextNode(mk.textContent), mk); p.normalize();
+  });
+  searchHits = []; searchIdx = -1;
+  $("#searchInfo").textContent = "";
+}
+
+function runSearch(q) {
+  clearSearch();
+  if (!q) return;
+  const needle = q.toLowerCase();
+  const walker = document.createTreeWalker($("#thread"), NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      if (!node.nodeValue || !node.nodeValue.toLowerCase().includes(needle)) return NodeFilter.FILTER_REJECT;
+      if (node.parentNode && node.parentNode.closest(".rbar")) return NodeFilter.FILTER_REJECT;
+      return NodeFilter.FILTER_ACCEPT;
+    }
+  });
+  const targets = [];
+  let n; while ((n = walker.nextNode())) targets.push(n);
+  for (const node of targets) {
+    const text = node.nodeValue;
+    const frag = document.createDocumentFragment();
+    let i = 0, low = text.toLowerCase(), idx;
+    while ((idx = low.indexOf(needle, i)) !== -1) {
+      if (idx > i) frag.appendChild(document.createTextNode(text.slice(i, idx)));
+      const mk = el("mark", null, text.slice(idx, idx + needle.length));
+      frag.appendChild(mk); searchHits.push(mk);
+      i = idx + needle.length;
+    }
+    if (i < text.length) frag.appendChild(document.createTextNode(text.slice(i)));
+    node.parentNode.replaceChild(frag, node);
+  }
+  $("#searchInfo").textContent = searchHits.length ? searchHits.length + " hits" : "no hits";
+  if (searchHits.length) jumpTo(0);
+}
+
+function jumpTo(i) {
+  if (!searchHits.length) return;
+  if (searchIdx >= 0 && searchHits[searchIdx]) searchHits[searchIdx].classList.remove("active");
+  searchIdx = (i + searchHits.length) % searchHits.length;
+  const mk = searchHits[searchIdx];
+  mk.classList.add("active");
+  // reveal it if inside a collapsed container
+  const think = mk.closest(".think"); if (think) think.classList.add("open");
+  const tool = mk.closest(".tool"); if (tool) tool.classList.add("open");
+  const clamp = mk.closest(".clamp"); if (clamp) clamp.classList.add("expanded");
+  const ctx = mk.closest(".ctx"); if (ctx) ctx.classList.add("open");
+  mk.scrollIntoView({ behavior: "smooth", block: "center" });
+  $("#searchInfo").textContent = (searchIdx + 1) + "/" + searchHits.length;
+}
+
+let searchTimer = null;
+$("#search").addEventListener("input", e => {
+  clearTimeout(searchTimer);
+  const q = e.target.value;
+  searchTimer = setTimeout(() => runSearch(q), 150);
+});
+$("#search").addEventListener("keydown", e => {
+  if (e.key === "Enter") { e.preventDefault(); jumpTo(searchIdx + (e.shiftKey ? -1 : 1)); }
+});
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape") { $("#search").value = ""; clearSearch(); $("#search").blur(); }
+});
+
+/* ============================ file loading ============================ */
+function loadText(raw, fileName) {
+  const entries = parseTranscript(raw);
+  document.body.classList.add("loaded");
+  $("#drop").classList.add("hide");
+  $("#fname").textContent = fileName || "";
+  clearSearch();
+  $("#search").value = "";
+  render(entries, fileName);
+  window.scrollTo(0, 0);
+}
+
+function handleFile(file) {
+  const r = new FileReader();
+  r.onload = () => loadText(String(r.result), file.name);
+  r.readAsText(file);
+}
+
+$("#file").addEventListener("change", e => { if (e.target.files[0]) handleFile(e.target.files[0]); });
+
+// drag & drop anywhere
+window.addEventListener("dragover", e => { e.preventDefault(); document.body.classList.add("dragging"); });
+window.addEventListener("dragleave", e => { if (e.clientX === 0 && e.clientY === 0) document.body.classList.remove("dragging"); });
+window.addEventListener("drop", e => {
+  e.preventDefault();
+  document.body.classList.remove("dragging");
+  const f = e.dataTransfer.files[0];
+  if (f) handleFile(f);
+});
+
+/* ---- URL loading: ?session=<path-or-url> fetches and renders on load ----
+   Used by the context-arch eval dashboard's "view conversation" links
+   (served via `pnpm --dir evals/context-arch run viewer` on :8817).
+   Needs http(s) — fetch is blocked over file://, where drag/pick still works. */
+(function () {
+  const src = new URLSearchParams(location.search).get("session");
+  if (!src) return;
+  const failNote = (msg) => {
+    const card = $("#drop .card");
+    if (!card) return;
+    const p = el("p", null, msg);
+    p.style.color = "var(--err)";
+    card.appendChild(p);
+  };
+  if (location.protocol === "file:") {
+    failNote("?session= needs an http server (fetch is blocked over file://) — drag the file in instead.");
+    return;
+  }
+  fetch(src)
+    .then(r => { if (!r.ok) throw new Error("HTTP " + r.status); return r.text(); })
+    .then(raw => loadText(raw, src.split("/").pop() || src))
+    .catch(e => failNote("failed to load " + src + " — " + e.message));
+})();
+
+// expose for automated verification (playwright evaluate)
+window.__pi = { loadText, runSearch, get hits() { return searchHits.length; } };
+</script>

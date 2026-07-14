@@ -1,0 +1,58 @@
+---
+fps: 30
+---
+
+{/*
+  STUB — opening title scene only (storyboard scene 1 in
+  instruction-video-plan.md). Not the full 90s video. Structure follows
+  egaki's own acme-example/video.mdx verbatim:
+  https://raw.githubusercontent.com/remorses/egaki/main/acme-example/video.mdx
+  Primitives (Background, Opacity, Scale, easing presets from 'egaki/video')
+  are grounded in README.md + code-block-example/components.tsx — see this
+  folder's README.md for citations. Extend with scenes 2-12 from the plan.
+*/}
+
+import { smooth } from 'egaki/video'
+
+# Title duration=4s
+
+<Background>
+  <div
+    style={{
+      width: '100%',
+      height: '100%',
+      background:
+        'linear-gradient(90deg,#FF4D4D,#FF9500,#FFD500,#00C878,#2E7CF6,#7B4DFF)',
+      opacity: 0.16,
+    }}
+  />
+</Background>
+
+<Opacity from={0} to={1} duration={1 * FPS} easing={smooth}>
+  <Scale from={0.94} to={1} duration={1 * FPS} easing={smooth} inline>
+    <div style={{ textAlign: 'center', paddingTop: 320 }}>
+      <h1
+        style={{
+          fontFamily: 'system-ui, sans-serif',
+          fontSize: 88,
+          fontWeight: 800,
+          color: '#17161E',
+          margin: 0,
+          letterSpacing: '-0.03em',
+        }}
+      >
+        designbook
+      </h1>
+      <p
+        style={{
+          fontFamily: 'system-ui, sans-serif',
+          fontSize: 28,
+          color: '#4C4A57',
+          marginTop: 18,
+        }}
+      >
+        Design the product, not pictures of it.
+      </p>
+    </div>
+  </Scale>
+</Opacity>

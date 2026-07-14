@@ -43,6 +43,12 @@ import {
   type RecentWrite,
 } from "../sidecar/hmrSuppress.ts";
 import { isFlushWritesRequest } from "../sidecar/flushWrites.ts";
+import { wireGeneratedTailwindRefresh } from "../lib/generatedTailwindRefresh.ts";
+import { generatedDirsTailwindSourcePlugin } from "../lib/variationsTailwindSource.ts";
+import {
+  createSandboxOverridesVite,
+  type RedirectsPayload,
+} from "./sandboxOverridesVite.ts";
 
 /** dist/node/plugin.js → package root (dist/ui and dist/node live under it). */
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
@@ -181,30 +187,11 @@ function writePersist(fields) {
   } catch (e) {}
 }
 
-// Page-tools-open flag: a boot-owned one-off sessionStorage key BESIDE the
-// versioned persist blob. Set while the page-tools strip is open (page mode),
-// cleared on close / on entering the full canvas. On reload it re-opens the
-// strip; it never blocks reloads (page mode leaves g.expanded false, so the
-// reload-defer guard stays disarmed).
-const PAGE_TOOLS_KEY = "designbook:pageTools:" + (CONFIG_DIR || ".");
-function readPageToolsFlag() {
-  try {
-    return window.sessionStorage.getItem(PAGE_TOOLS_KEY) === "1";
-  } catch (e) {
-    return false;
-  }
-}
-function writePageToolsFlag(on) {
-  try {
-    if (on) window.sessionStorage.setItem(PAGE_TOOLS_KEY, "1");
-    else window.sessionStorage.removeItem(PAGE_TOOLS_KEY);
-  } catch (e) {}
-}
-
 // Deep-link handoff: the /__designbook[/component/<id>] route stashes
 // these in sessionStorage then redirects to "/". Read + clear them here so a
-// later manual reload doesn't re-trigger the auto-expand/navigation.
-let deepLink = null;
+// later manual reload doesn't re-trigger the auto-expand. The component id is
+// cleared but otherwise ignored — the registry/component pages are retired;
+// a component deep link now just opens the full view.
 let autoExpandFromSession = false;
 try {
   const s = window.sessionStorage;
@@ -212,13 +199,12 @@ try {
     autoExpandFromSession = true;
     s.removeItem("designbook:autoExpand");
   }
-  deepLink = s.getItem("designbook:deepLink");
-  if (deepLink) s.removeItem("designbook:deepLink");
+  if (s.getItem("designbook:deepLink")) s.removeItem("designbook:deepLink");
 } catch (e) {}
 
 // Mutable UI state, painted imperatively — the toolbar is a pure function of it
 // (no hooks), driven entirely from outside so crash/expand events can repaint.
-const state = { expanded: false, pageTools: false, loading: false, crashed: false, queuedReload: false, error: null };
+const state = { expanded: false, loading: false, crashed: false, queuedReload: false, error: null };
 let handle = null;
 let workbenchPromise = null;
 
@@ -300,19 +286,71 @@ const PILL_STYLE = {
   gap: "8px",
 };
 
+// --- Entry/exit: pencil/play EVERYWHERE ---------------------------------
+// The bottom-LEFT perfectly-round pencil expands the overlay straight into
+// the full view (the only designbook UI), and the view's own play button
+// collapses it back via g.collapseOverlay. There is no pill and no page-mode
+// strip anymore. The pencil's metrics MUST mirror the full view's
+// .dbproto-playbtn exactly: fixed left 16 / bottom 16, 44px, radius 50%.
+//
+// Legacy prototype route: #/proto/full-view used to be the full view's
+// address. Redirect muscle memory — strip the hash and expand.
+const LEGACY_PROTO_HASH = "#/proto/full-view";
+function consumeLegacyProtoHash() {
+  if (window.location.hash !== LEGACY_PROTO_HASH) return false;
+  try {
+    window.history.replaceState(
+      null,
+      "",
+      window.location.pathname + window.location.search,
+    );
+  } catch (e) {}
+  return true;
+}
+window.addEventListener("hashchange", function () {
+  if (consumeLegacyProtoHash() && !state.expanded) void expand();
+});
+
+const PENCIL_STYLE = {
+  position: "fixed",
+  left: "16px",
+  bottom: "16px",
+  width: "44px",
+  height: "44px",
+  padding: "0",
+  borderRadius: "50%",
+  border: "none",
+  background: "#1f6feb",
+  color: "#fff",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  cursor: "pointer",
+  boxShadow: "0 6px 22px rgba(31,111,235,.5), 0 0 0 1px rgba(255,255,255,.12)",
+};
+
+function pencilIcon() {
+  return React.createElement(
+    "svg",
+    {
+      width: 18,
+      height: 18,
+      viewBox: "0 0 24 24",
+      fill: "none",
+      stroke: "currentColor",
+      strokeWidth: 2,
+      strokeLinecap: "round",
+      strokeLinejoin: "round",
+    },
+    React.createElement("path", {
+      d: "M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z",
+    }),
+    React.createElement("path", { d: "m15 5 4 4" }),
+  );
+}
+
 function Toolbar() {
   const children = [];
-  // Page mode: the dist/ui strip owns the affordance — hide the boot pill
-  // (unless we're still loading it, or surfacing an error/crash).
-  if (
-    state.pageTools &&
-    !state.expanded &&
-    !state.loading &&
-    !state.error &&
-    !state.crashed
-  ) {
-    return React.createElement(React.Fragment, null, children);
-  }
   if (state.error && !state.expanded) {
     // Config/mount failure: show the reason and let the user retry the mount.
     children.push(
@@ -363,17 +401,23 @@ function Toolbar() {
         ),
       );
     }
-    children.push(
-      React.createElement(
-        "button",
-        { key: "pill", onClick: toggle, style: PILL_STYLE },
-        state.loading
-          ? loadingLabel()
-          : state.expanded
-            ? "\\u2715 collapse"
-            : "\\u25C8 designbook",
-      ),
-    );
+    // Pencil/play everywhere: the pencil (collapsed state) expands STRAIGHT
+    // into the full view; while expanded there is no pill at all — the
+    // view's play button owns the exit (g.collapseOverlay).
+    if (!state.expanded) {
+      children.push(
+        React.createElement(
+          "button",
+          {
+            key: "pencil",
+            onClick: function () { void expand(); },
+            title: state.loading ? loadingLabel() : "Edit (open designbook)",
+            style: Object.assign({}, PENCIL_STYLE, state.loading ? { opacity: 0.7 } : null),
+          },
+          pencilIcon(),
+        ),
+      );
+    }
   }
   return React.createElement(React.Fragment, null, children);
 }
@@ -429,78 +473,21 @@ function ensureWorkbench() {
   return workbenchPromise;
 }
 
-// --- Page tools ---------------------------------------------------------
-// Pill click enters PAGE MODE (a strip over the live app), not the full canvas.
-// The strip UI lives in dist/ui (mounted via handle.openPageTools) so it can
-// hit-test the live app with the fiber tooling; the boot module just lazy-loads
-// the chunk, sets the persisted flag, and wires the strip's escalations
-// (expand-to-canvas / go-to-component / close) back to the canvas handle.
-function openPageToolsFlow() {
-  writePageToolsFlag(true);
-  ensureWorkbench()
-    .then((h) => {
-      // A canvas expand may have won the race (e.g. crash "open anyway"); don't
-      // stack page tools on top of the full overlay.
-      if (state.expanded) return;
-      h.openPageTools({
-        onExpandCanvas: expandFromPageTools,
-        onClose: closePageToolsFlow,
-      });
-      state.pageTools = true;
-      paint();
-    })
-    .catch(() => {
-      // ensureWorkbench already logged + reset; keep the toolbar responsive.
-    });
-}
-
-function closePageToolsFlow() {
-  writePageToolsFlag(false);
-  if (handle) handle.closePageTools();
-  state.pageTools = false;
-  paint();
-}
-
-function expandFromPageTools(entryId) {
-  // Leave page mode and open the full canvas (optionally on a component entry).
-  writePageToolsFlag(false);
-  if (handle) handle.closePageTools();
-  state.pageTools = false;
-  // Plain "expand" (no entryId — "Go to component" always passes one) lands on
-  // the App page showing the live page's CURRENT route. Captured
-  // now, before expand() does anything — page mode never touches this URL.
-  const appPath = entryId
-    ? undefined
-    : window.location.pathname + window.location.search;
-  void expand().then(() => {
-    if (entryId && handle && typeof handle.navigateTo === "function") {
-      handle.navigateTo(entryId);
-    } else if (appPath && handle && typeof handle.navigateToApp === "function") {
-      handle.navigateToApp(appPath);
-    }
-  });
-}
-
 async function expand() {
   // Persist the expand INTENT before we start loading: if a Vite dep-optimize
-  // full-reload lands mid-load (the classic cause of a silent drop back to an
-  // idle pill), the reboot sees expanded=true and re-enters loading instead.
+  // full-reload lands mid-load (the classic cause of a silent drop back to a
+  // dead pencil), the reboot sees expanded=true and re-enters loading instead.
   writePersist({ expanded: true });
-  // Entering the canvas leaves page mode — clear its flag so a later reload
-  // rehydrates the canvas, not the strip.
-  writePageToolsFlag(false);
+  // The full view lands on the live page's CURRENT route — captured before
+  // the (possibly slow) first mount so a mid-load app navigation can't skew it.
+  const appPath = window.location.pathname + window.location.search;
   try {
     const h = await ensureWorkbench();
     h.expand();
     state.expanded = true;
     g.expanded = true;
     paint();
-    // Deep link: navigate to the requested component once (the handle queues
-    // it if the workbench tree hasn't finished mounting yet).
-    if (deepLink && typeof h.navigateTo === "function") {
-      h.navigateTo(deepLink);
-      deepLink = null;
-    }
+    if (typeof h.navigateToApp === "function") h.navigateToApp(appPath);
   } catch {
     // ensureWorkbench already logged + reset; keep the toolbar responsive.
   }
@@ -519,13 +506,9 @@ function collapse() {
   }
   paint();
 }
-
-function toggle() {
-  // Pill: collapse the canvas if open, otherwise enter PAGE MODE (the strip).
-  // The full canvas is reached only via the strip's expand / go-to-component.
-  if (state.expanded) collapse();
-  else openPageToolsFlow();
-}
+// Seam for the full view's play button: exit the overlay back to the
+// running app (there is no pill — the pencil/play pair owns entry/exit).
+g.collapseOverlay = collapse;
 
 function openAnyway() {
   void expand();
@@ -571,14 +554,12 @@ if (restoreExpanded) {
   g.expanded = true;
   writePersist({ deferredReloadPending: false });
 }
-// Page mode rehydration: re-open the strip if it was open at reload time
-// (canvas expand wins if both are somehow set). Page mode never armed the
-// reload-defer guard, so this reload was NOT blocked.
-const restorePageTools = !restoreExpanded && readPageToolsFlag();
-
 paint();
-if (AUTO_EXPAND || autoExpandFromSession || restoreExpanded) void expand();
-else if (restorePageTools) openPageToolsFlow();
+// Legacy #/proto/full-view on load counts as an expand request.
+const legacyProtoEntry = consumeLegacyProtoHash();
+if (AUTO_EXPAND || autoExpandFromSession || restoreExpanded || legacyProtoEntry) {
+  void expand();
+}
 
 } // end recursion guard (if (!__dbFramed))
 `;
@@ -661,8 +642,14 @@ const RELOAD_GUARD_SOURCE = `
  * Deep links: `/__designbook` opens the app with the overlay auto-expanded;
  * `/__designbook/component/<entryId>` also navigates to that component. Served
  * by both the sidecar proxy and this plugin (so it works on either port).
+ *
+ * Returns a plugin ARRAY (Vite flattens nested arrays in `plugins`): the main
+ * injection plugin plus a tiny css transform that appends
+ * `@source ".designbook/{sandbox,variations}"` to the app's Tailwind v4 entry
+ * so generated variants' utilities exist even when `.designbook/` is
+ * gitignored (Tailwind's default source detection skips gitignored paths).
  */
-function designbookPlugin(options: DesignbookPluginOptions = {}): Plugin {
+function designbookPlugin(options: DesignbookPluginOptions = {}): Plugin[] {
   const cwd = process.cwd();
   const configPath = options.config
     ? isAbsolute(options.config)
@@ -788,7 +775,7 @@ function designbookPlugin(options: DesignbookPluginOptions = {}): Plugin {
     autoExpand,
   });
 
-  return {
+  const mainPlugin: Plugin = {
     name: "designbook",
     apply: "serve",
     config() {
@@ -867,6 +854,19 @@ function designbookPlugin(options: DesignbookPluginOptions = {}): Plugin {
     // to "/", where the boot module above consumes it.
     configureServer(devServer) {
       devServerRef = devServer;
+
+      // Hot Tailwind for landed sandbox/variations files: a NEW file under
+      // the generated dirs matches no module-graph entry, so neither Vite nor
+      // @tailwindcss/vite reacts and the entry css stays stale (even across
+      // reloads) until an unrelated edit. Re-emit a `change` on the Tailwind
+      // entry css when generated files land — the exact native css hot-update
+      // path (style swap, no reload). See generatedTailwindRefresh.ts.
+      const generatedRefresh = wireGeneratedTailwindRefresh(
+        devServer,
+        dirname(configPath),
+      );
+      devServer.httpServer?.once("close", () => generatedRefresh.dispose());
+
       devServer.middlewares.use((request, response, next) => {
         const pathname = (request.url ?? "/").split("?")[0];
 
@@ -982,6 +982,48 @@ function designbookPlugin(options: DesignbookPluginOptions = {}): Plugin {
       ];
     },
   };
+
+  // Sandbox overrides (O1): the vite ModuleOverrideHost for the INJECTED
+  // topology — the sidecar owns the index/shims in a separate process, so
+  // this plugin polls its redirect table (version-gated, same cadence as the
+  // recent-writes poll) and applies module→shim redirects via resolveId.
+  // `apply: "serve"` + the controller's own dev-only gate keep production
+  // builds redirect-free.
+  const sandboxOverrides = createSandboxOverridesVite({
+    // The config imports registry components but is not in the page tree —
+    // hot-emitting it escalates to a full reload (see excludeHotFiles doc).
+    excludeHotFiles: [configPath],
+    // Landed sandbox files get a real module node so tailwind's scanned-file
+    // hotUpdate takes the js-update path, never its silent full-reload.
+    warmDirs: [
+      join(dirname(configPath), ".designbook/sandbox"),
+      // Changeset LAYER alternatives (mirrored-path files) get the same
+      // guard/warm treatment (docs/specs/changeset-layers.md, L1).
+      join(dirname(configPath), ".designbook/changesets"),
+    ],
+    fetchRedirects: async (): Promise<RedirectsPayload | undefined> => {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 800);
+      try {
+        const res = await fetch(
+          `${serverUrl}${DESIGNBOOK_API_BASE}/api/sandbox/redirects`,
+          { signal: controller.signal },
+        );
+        if (!res.ok) return undefined;
+        return (await res.json()) as RedirectsPayload;
+      } catch {
+        return undefined; // Sidecar down — keep the current table.
+      } finally {
+        clearTimeout(timer);
+      }
+    },
+  });
+
+  return [
+    generatedDirsTailwindSourcePlugin(dirname(configPath)),
+    mainPlugin,
+    sandboxOverrides.plugin,
+  ];
 }
 
 /** POSIX-style `relative(from, to)` (config dir is a URL-ish path in the UI). */

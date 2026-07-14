@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildFramePromptPrefill,
   canGoToFrameComponent,
+  canPromptFrameSandbox,
   domLabel,
   type FrameHit,
 } from "@designbook-ui/models/frame/appFrameHit";
@@ -31,6 +32,49 @@ describe("canGoToFrameComponent", () => {
 
   it("is false for a plain DOM drill level", () => {
     expect(canGoToFrameComponent(domHit)).toBe(false);
+  });
+});
+
+describe("canPromptFrameSandbox (sandbox prompt-box guard)", () => {
+  const anchor = {};
+  /** The owner-fallback shape: HomePage's hero on the App page — synthesized
+   * entry (id "", sourcePath possibly "") + ownerKind "source". */
+  const sourceOwnerHit: FrameHit = {
+    kind: "dom",
+    name: "section",
+    entry: { id: "", label: "HomePage", sourcePath: "", key: "HomePage" },
+    dom: { tag: "section", classes: ["rounded-xl"] },
+    ownerKind: "source",
+    anchor,
+  };
+
+  it("accepts registered component + registered-owner element hits (unchanged)", () => {
+    expect(canPromptFrameSandbox(componentHit)).toBe(true);
+    expect(canPromptFrameSandbox({ ...domHit, anchor })).toBe(true);
+    // A registered-owner DOM hit still needs its live anchor.
+    expect(canPromptFrameSandbox(domHit)).toBe(false);
+  });
+
+  it("ACCEPTS a source-owner DOM hit, even with sourcePath ''", () => {
+    expect(canPromptFrameSandbox(sourceOwnerHit)).toBe(true);
+    expect(
+      canPromptFrameSandbox({
+        ...sourceOwnerHit,
+        entry: { ...sourceOwnerHit.entry, sourcePath: "src/pages/HomePage.tsx" },
+      }),
+    ).toBe(true);
+  });
+
+  it("rejects a source-owner hit without an anchor or export key", () => {
+    expect(canPromptFrameSandbox({ ...sourceOwnerHit, anchor: undefined })).toBe(
+      false,
+    );
+    expect(
+      canPromptFrameSandbox({
+        ...sourceOwnerHit,
+        entry: { ...sourceOwnerHit.entry, key: "" },
+      }),
+    ).toBe(false);
   });
 });
 

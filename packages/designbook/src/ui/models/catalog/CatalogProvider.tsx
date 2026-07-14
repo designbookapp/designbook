@@ -98,21 +98,42 @@ function CatalogLiveProvider({
   onRouteChange,
   children,
 }: Omit<CatalogProviderProps, "data" | "navigate" | "navigateApp">) {
-  const { branch, urlBranch, flowId, nodeIds, appPath, navigate, navigateApp } =
-    useCanvasRoute(currentBranch, {
-      mode: routeMode,
-      initialRoute,
-      onRouteChange,
-    });
+  const {
+    branch,
+    urlBranch,
+    flowId,
+    nodeIds,
+    appPath,
+    sandboxPinId,
+    navigate,
+    navigateApp,
+    navigateSandbox,
+  } = useCanvasRoute(currentBranch, {
+    mode: routeMode,
+    initialRoute,
+    onRouteChange,
+  });
   const model = useMemo(
     () =>
       createCatalogModel({
         data: liveCatalogData(),
-        route: { branch, urlBranch, flowId, nodeIds, appPath },
+        route: { branch, urlBranch, flowId, nodeIds, appPath, sandboxPinId },
         navigate,
         navigateApp,
+        navigateSandbox,
       }),
-    [branch, urlBranch, flowId, nodeIds, appPath, navigate, navigateApp],
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- route scalars + actions
+    [
+      branch,
+      urlBranch,
+      flowId,
+      nodeIds,
+      appPath,
+      sandboxPinId,
+      navigate,
+      navigateApp,
+      navigateSandbox,
+    ],
   );
   return (
     <CatalogModelContext.Provider value={model}>

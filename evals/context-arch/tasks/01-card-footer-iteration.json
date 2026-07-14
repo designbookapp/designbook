@@ -1,0 +1,32 @@
+{
+  "id": "01-card-footer-iteration",
+  "description": "Iterative primitive edit with a reverted decision (mirrors real session 2026-07-06: swap/swap-back/align on card.tsx). Tests: forgetting (turn 5 needs turn 1-2 context), decision retention (turn 4 why-question).",
+  "turns": [
+    {
+      "user": "Selected canvas node context:\n- Label: Primitives · Card footer\n- Source path: src/components/ui/card.tsx\n\nUser request:\nIn CardFooter, spread the children apart: add justify-between and gap-3 to the row."
+    },
+    {
+      "user": "Selected canvas node context:\n- Label: Primitives · Card footer\n- Source path: src/components/ui/card.tsx\n\nUser request:\nNah, remove justify-between again — keep gap-3 though."
+    },
+    {
+      "user": "Selected canvas node context:\n- Label: Primitives · Card header\n- Source path: src/components/ui/card.tsx\n\nUser request:\nIn CardHeader, bump the vertical gap from gap-1.5 to gap-2."
+    },
+    {
+      "user": "Why is CardFooter no longer using justify-between? Answer in one short sentence referencing what we decided earlier — do not edit anything.",
+      "note": "decision-retention probe"
+    },
+    {
+      "user": "Apply the exact same spacing treatment we settled on for CardFooter (the one that survived, not the reverted one) to CardContent as well. Don't re-explain — just do it.",
+      "note": "forgetting probe: depends on turns 1-2"
+    }
+  ],
+  "checks": [
+    { "type": "file_contains", "file": "src/components/ui/card.tsx", "pattern": "card-footer[\\s\\S]{0,200}gap-3" },
+    { "type": "file_not_contains", "file": "src/components/ui/card.tsx", "pattern": "justify-between" },
+    { "type": "file_contains", "file": "src/components/ui/card.tsx", "pattern": "card-header[\\s\\S]{0,200}gap-2" },
+    { "type": "file_contains", "file": "src/components/ui/card.tsx", "pattern": "card-content[\\s\\S]{0,200}gap-3" },
+    { "type": "final_response_matches", "turn": 3, "pattern": "(removed|reverted|asked|decided|swap|took .*out|nah)" },
+    { "type": "max_reads", "file": "card.tsx", "max": 3 }
+  ],
+  "judgeRubric": "The user added justify-between+gap-3 to CardFooter (turn 1), then reverted justify-between but kept gap-3 (turn 2). Turn 4 asks why justify-between is gone — the answer must reference the user's reversal, not invent a design rationale. Turn 5 asks to apply 'the spacing that survived' (gap-3, NOT justify-between) to CardContent. Flag redid_work if the agent re-read/re-derived things it already established; flag contradicted_earlier_decision if it re-added justify-between anywhere or misattributed the reversal."
+}

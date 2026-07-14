@@ -84,6 +84,7 @@ describe("createCatalogModel (fixture / data mode)", () => {
         flowId: "product",
         nodeIds: ["product.Card"],
         appPath: undefined,
+        sandboxPinId: undefined,
       },
     });
     expect(routed.branch).toBe("main");

@@ -4,15 +4,25 @@ import {
   useState,
   useSyncExternalStore,
   type FormEvent,
+  type ReactNode,
 } from "react";
 import { apiUrl } from "@designbook-ui/designbook";
 import {
+  subscribeApiEvents,
+  subscribeConnectionStatus,
+} from "@designbook-ui/models/events/eventBus";
+import {
   BotIcon,
+  CheckIcon,
+  MapPinIcon,
+  ChevronRightIcon,
   FileImageIcon,
   InfoIcon,
+  PencilIcon,
   PlusIcon,
   RefreshCwIcon,
   SendIcon,
+  SparklesIcon,
   SquareIcon,
   TriangleAlertIcon,
   WrenchIcon,
@@ -85,15 +95,18 @@ import {
 } from "@designbook-ui/components/ui/toggle-group";
 import { cn } from "@designbook-ui/lib/utils";
 import {
+  appendActivityEntry,
   buildCanvasContextBlock,
   buildPromptWithCanvasContext,
+  completeActivity,
   emptyThreadMarker,
   formatSelectionMarkerSummary,
   getModelValue,
-  getToolMarker,
   messagesToThreadItems,
   parseModelValue,
   toLiveMessage,
+  toToolEntry,
+  truncateThreadForViewing,
   upsertMarker,
   upsertMessage,
 } from "@designbook-ui/models/chat/chatModel";
@@ -102,11 +115,23 @@ import {
   getSelectionContextSnapshot,
   subscribeSelectionContext,
 } from "@designbook-ui/models/selectionContext/store";
+import {
+  insertTurnRows,
+  applyTurnLabel,
+  turnRowsFromWire,
+  upsertTurnRecord,
+  type ConversationTurnWire,
+} from "@designbook-ui/models/chat/turnRows";
+import { TurnChangesRow } from "./TurnChangesRow";
 import type { CanvasNodeSelection } from "@designbook-ui/types";
 import type {
+  ActivityEntry,
+  DesignActivity,
   DesignMarker,
   DesignMessage,
   DesignState,
+  DesignTurn,
+  DesignVariantsRow,
   ModelOption,
   PiEvent,
   ThreadItem,
@@ -118,7 +143,15 @@ const CHAT_PROMPT_INPUT_ID = "design-agent-prompt";
 
 const copy = {
   abortCurrentResponse: "Abort current response",
+  activityDone: "Done",
+  activityRan: "Ran",
+  activityRunning: "Running",
+  activityThinking: "Thinking",
+  activityWorked: "Worked on it",
   agentCwdLabel: "Agent cwd:",
+  editAndRestart: "Edit prompt and restart conversation",
+  editCancel: "Cancel",
+  editRestart: "Restart",
   appDescription: "Describe the change. It lands as code in your repo.",
   appTitle: "designbook agent",
   assistantAvatarFallback: "π",
@@ -155,6 +188,32 @@ const copy = {
   userSender: "You",
   working: "Working",
 };
+
+/** Elapsed ms → compact label: `842ms`, `12.4s`, `1m 12s`. */
+function formatElapsed(ms: number): string {
+  if (ms < 1000) {
+    return `${Math.max(0, Math.round(ms))}ms`;
+  }
+  if (ms < 60_000) {
+    return `${(ms / 1000).toFixed(1)}s`;
+  }
+  const minutes = Math.floor(ms / 60_000);
+  const seconds = Math.round((ms % 60_000) / 1000);
+  return `${minutes}m ${seconds}s`;
+}
+
+/** The subdued `+12.4s` timing chip on messages and activity entries. Hidden
+ * unless the server ran with DESIGNBOOK_TIMINGS=1 (state.showTimings). */
+function ElapsedChip({ at, show }: { at?: number; show?: boolean }) {
+  if (!show || at === undefined) {
+    return null;
+  }
+  return (
+    <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground/60">
+      +{formatElapsed(at)}
+    </span>
+  );
+}
 
 function getMarkerIcon(icon: DesignMarker["icon"]) {
   if (icon === "tool") {
@@ -208,10 +267,27 @@ function MessageAttachments({ message }: { message: DesignMessage }) {
   );
 }
 
-function ThreadMessage({ item }: { item: DesignMessage }) {
+function ThreadMessage({
+  item,
+  onRestartEdited,
+  showTimings,
+}: {
+  item: DesignMessage;
+  /** Set ONLY on the initial user prompt: enables edit-and-restart (a new
+   * session re-sent with the edited text). */
+  onRestartEdited?: (text: string) => void;
+  showTimings?: boolean;
+}) {
   const align = item.role === "user" ? "end" : "start";
   const sender = item.role === "user" ? copy.userSender : copy.assistantSender;
   const bubbleVariant = item.role === "user" ? "default" : "secondary";
+  const [editing, setEditing] = useState(false);
+  const [editText, setEditText] = useState(item.text);
+
+  function beginEdit() {
+    setEditText(item.text);
+    setEditing(true);
+  }
 
   return (
     <MessageGroup>
@@ -226,17 +302,75 @@ function ThreadMessage({ item }: { item: DesignMessage }) {
           </Avatar>
         </MessageAvatar>
         <MessageContent>
-          <MessageHeader>{sender}</MessageHeader>
+          <MessageHeader className="flex items-center gap-1.5">
+            {sender}
+            {item.anchor ? (
+              // Conversation-routed asks: the message is SCOPED to a canvas
+              // selection — the pin chip is the visual anchor.
+              <Badge
+                variant="secondary"
+                className="max-w-48 gap-1 truncate font-normal"
+                title={item.anchor.label}
+              >
+                <MapPinIcon className="size-3 shrink-0" />
+                <span className="truncate">{item.anchor.label}</span>
+              </Badge>
+            ) : null}
+            <ElapsedChip at={item.at} show={showTimings} />
+            {onRestartEdited && !editing ? (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-5 text-muted-foreground"
+                title={copy.editAndRestart}
+                aria-label={copy.editAndRestart}
+                onClick={beginEdit}
+              >
+                <PencilIcon className="size-3" />
+              </Button>
+            ) : null}
+          </MessageHeader>
           <MessageAttachments message={item} />
-          <Bubble variant={bubbleVariant} align={align}>
-            <BubbleContent>
-              {item.text ? (
-                <span className="whitespace-pre-wrap">{item.text}</span>
-              ) : (
-                <span className="shimmer">{copy.thinking}</span>
-              )}
-            </BubbleContent>
-          </Bubble>
+          {editing && onRestartEdited ? (
+            <div className="flex w-full flex-col gap-1.5">
+              <textarea
+                className="min-h-24 w-full resize-y rounded-md border bg-background p-2 font-mono text-xs"
+                value={editText}
+                onChange={(changeEvent) => setEditText(changeEvent.target.value)}
+                aria-label={copy.editAndRestart}
+              />
+              <div className="flex items-center gap-1.5 self-end">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setEditing(false)}
+                >
+                  {copy.editCancel}
+                </Button>
+                <Button
+                  size="sm"
+                  disabled={!editText.trim()}
+                  onClick={() => {
+                    setEditing(false);
+                    onRestartEdited(editText.trim());
+                  }}
+                >
+                  <RefreshCwIcon className="size-3" />
+                  {copy.editRestart}
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <Bubble variant={bubbleVariant} align={align}>
+              <BubbleContent>
+                {item.text ? (
+                  <span className="whitespace-pre-wrap">{item.text}</span>
+                ) : (
+                  <span className="shimmer">{copy.thinking}</span>
+                )}
+              </BubbleContent>
+            </Bubble>
+          )}
           {item.status ? <MessageFooter>{item.status}</MessageFooter> : null}
         </MessageContent>
       </Message>
@@ -244,12 +378,188 @@ function ThreadMessage({ item }: { item: DesignMessage }) {
   );
 }
 
-function ThreadItemView({ item }: { item: ThreadItem }) {
+/** The collapsed one-line summary — the LAST entry of the run, claude.ai-style:
+ * the first line of the last thinking snippet, or `Running/Ran <tool>`. */
+function getActivitySummary(activity: DesignActivity): string {
+  const last = activity.entries[activity.entries.length - 1];
+
+  if (!last) {
+    return copy.activityWorked;
+  }
+
+  if (last.type === "tool") {
+    const verb =
+      last.status === "running" ? copy.activityRunning : copy.activityRan;
+    return last.detail
+      ? `${verb} ${last.name} · ${last.detail}`
+      : `${verb} ${last.name}`;
+  }
+
+  const firstLine = last.text.trim().split("\n")[0]?.trim();
+  return firstLine || copy.activityThinking;
+}
+
+function ActivityEntryStatus({
+  status,
+}: {
+  status: "running" | "done" | "error";
+}) {
+  if (status === "running") {
+    return <Spinner className="size-3 text-muted-foreground" />;
+  }
+
+  if (status === "error") {
+    return <TriangleAlertIcon className="size-3 text-destructive" />;
+  }
+
+  return <CheckIcon className="size-3 text-muted-foreground" />;
+}
+
+function ActivityEntryRow({
+  entry,
+  showTimings,
+}: {
+  entry: ActivityEntry;
+  showTimings?: boolean;
+}) {
+  if (entry.type === "thinking") {
+    return (
+      <div className="flex items-start gap-1.5">
+        <SparklesIcon className="mt-0.5 size-3 shrink-0 text-muted-foreground/70" />
+        <p className="min-w-0 flex-1 whitespace-pre-wrap text-muted-foreground">
+          {entry.text.trim()}
+        </p>
+        <ElapsedChip at={entry.at} show={showTimings} />
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex min-w-0 items-center gap-1.5">
+      <WrenchIcon className="size-3 shrink-0 text-muted-foreground/70" />
+      <span className="shrink-0 font-mono text-foreground/80">
+        {entry.name}
+      </span>
+      {entry.detail ? (
+        <span className="truncate font-mono text-muted-foreground/80">
+          {entry.detail}
+        </span>
+      ) : null}
+      <ActivityEntryStatus status={entry.status} />
+      <span className="ml-auto flex shrink-0 items-center">
+        <ElapsedChip at={entry.at} show={showTimings} />
+      </span>
+    </div>
+  );
+}
+
+/**
+ * A claude.ai-style collapsed "activity" row: one subdued line summarizing a run
+ * of thinking + tool calls, expandable into the ordered list. Replaces the empty
+ * "Thinking…" bubbles a thinking/tool-only turn used to produce. Collapsed by
+ * default; expansion is local state keyed by `item.id`, so it survives the
+ * re-renders a streaming turn triggers.
+ */
+function ThreadActivity({
+  item,
+  showTimings,
+}: {
+  item: DesignActivity;
+  showTimings?: boolean;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const isRunning = item.status === "running";
+
+  return (
+    <div className="px-1 py-0.5 text-xs">
+      <button
+        type="button"
+        aria-expanded={expanded}
+        onClick={() => setExpanded((current) => !current)}
+        className={cn(
+          "flex w-full items-center gap-1 text-left text-muted-foreground transition-colors hover:text-foreground",
+        )}
+      >
+        <ChevronRightIcon
+          className={cn(
+            "size-3.5 shrink-0 transition-transform",
+            expanded && "rotate-90",
+          )}
+        />
+        <span className={cn("truncate", isRunning && "shimmer")}>
+          {getActivitySummary(item)}
+        </span>
+      </button>
+      {expanded ? (
+        <div className="mt-1.5 ml-[7px] flex flex-col gap-1.5 border-l pl-3">
+          {item.entries.map((entry, index) => (
+            <ActivityEntryRow
+              key={entry.type === "tool" ? entry.id : `thinking-${index}`}
+              entry={entry}
+              showTimings={showTimings}
+            />
+          ))}
+          {isRunning ? null : (
+            <div className="flex items-center gap-1.5 text-muted-foreground">
+              <CheckIcon className="size-3 shrink-0" />
+              <span>{copy.activityDone}</span>
+            </div>
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/** Fallback rendering for a conversation-anchored variants row when the
+ * host surface supplies no card renderer (e.g. the plain drawer chat):
+ * the transcript note as a subdued info block. */
+function VariantsRowFallback({ item }: { item: DesignVariantsRow }) {
+  return (
+    <div className="rounded-md border border-dashed px-3 py-2 text-xs text-muted-foreground">
+      <span className="whitespace-pre-wrap">{item.text}</span>
+    </div>
+  );
+}
+
+function ThreadItemView({
+  item,
+  onRestartEdited,
+  showTimings,
+  renderVariantsRow,
+}: {
+  item: ThreadItem;
+  onRestartEdited?: (text: string) => void;
+  showTimings?: boolean;
+  /** Conversation-routed asks: the host renders a variants row as live
+   * VARIANT CARDS (ChatPanel supplies this — it owns the sandbox api). */
+  renderVariantsRow?: (item: DesignVariantsRow) => ReactNode;
+}) {
   if (item.kind === "marker") {
     return <ThreadMarker item={item} />;
   }
 
-  return <ThreadMessage item={item} />;
+  if (item.kind === "activity") {
+    return <ThreadActivity item={item} showTimings={showTimings} />;
+  }
+
+  if (item.kind === "turn") {
+    // G2 history row: the turn's commit range — diff + restore affordances.
+    return <TurnChangesRow item={item} />;
+  }
+
+  if (item.kind === "variants") {
+    // Conversation-anchored variant cards (conversation-routed asks).
+    return <>{renderVariantsRow?.(item) ?? <VariantsRowFallback item={item} />}</>;
+  }
+
+  return (
+    <ThreadMessage
+      item={item}
+      onRestartEdited={onRestartEdited}
+      showTimings={showTimings}
+    />
+  );
 }
 
 function DesignChat({
@@ -257,12 +567,29 @@ function DesignChat({
   selectedNode,
   draft,
   onDraftChange,
+  onPromptIntercept,
+  viewingTurn,
+  renderVariantsRow,
 }: {
   embedded?: boolean;
   selectedNode?: CanvasNodeSelection;
   /** Controlled prompt draft. Uncontrolled if unset. */
   draft?: string;
   onDraftChange?: (draft: string) => void;
+  /**
+   * When set, a submitted prompt routes through the caller's pipeline INSTEAD
+   * of /api/prompt — the proto full-view chat panel supplies this while a
+   * frame selection exists, so a selection-scoped prompt reaches the SAME
+   * conversation session with its fresh capture + pin anchor attached
+   * (conversation-routed asks; one connected chat system, no second
+   * composer). An error result restores the draft and surfaces a marker.
+   */
+  onPromptIntercept?: (message: string) => Promise<{ error?: string }>;
+  /** CHAT TIME-TRAVEL: the parked turn of this conversation's changeset —
+   * items after its turn row collapse behind a marker (display only). */
+  viewingTurn?: { turn: string; changesetId?: string };
+  /** Conversation-anchored variants rows → live variant cards (host-owned). */
+  renderVariantsRow?: (item: DesignVariantsRow) => ReactNode;
 }) {
   const [state, setState] = useState<DesignState>();
   const [models, setModels] = useState<ModelOption[]>([]);
@@ -290,10 +617,22 @@ function DesignChat({
     : undefined;
   const [connectionStatus, setConnectionStatus] = useState("Connecting");
   const streamingAssistantIdRef = useRef<string | undefined>(undefined);
+  // The open activity run for the live turn: thinking deltas + tool executions
+  // fold into ONE collapsed row (per contiguous run), mirroring the restore
+  // path's grouping. Set at agent_start, completed at agent_end.
+  const activityIdRef = useRef<string | undefined>(undefined);
+  // Elapsed-time origin (epoch ms of the session's first message) for the
+  // `+12.4s` chips. Restored threads compute theirs in messagesToThreadItems;
+  // this ref serves the LIVE folds, seeded from the same first timestamp.
+  const sessionStartRef = useRef<number | undefined>(undefined);
   // Branch-session scoping (per-branch-sessions spec): the thread is bound to
   // the ACTIVE branch's session. `undefined` = primary (wire compat), matching
   // the pre-registry behavior until the first `state` event arrives.
   const sessionBranchRef = useRef<string | undefined>(undefined);
+  // G2 history rows: the live conversation's landed commit ranges (sidecar
+  // turn records), woven into the thread as expandable diff/restore rows.
+  const [turnRows, setTurnRows] = useState<DesignTurn[]>([]);
+  const conversationIdRef = useRef<string | undefined>(undefined);
   const selectedModelValue = state?.model
     ? getModelValue(state.model)
     : undefined;
@@ -316,20 +655,99 @@ function DesignChat({
   }
 
   useEffect(() => {
-    const eventSource = new EventSource(apiUrl("/api/events"));
-
     void fetchModels();
 
-    eventSource.addEventListener("state", (messageEvent) => {
-      const nextState = JSON.parse(messageEvent.data as string) as DesignState;
+    /** Fold one full session state into the thread (the SSE `state` handler
+     * and the mount-time seed fetch share it). */
+    let cancelled = false;
+    let sawSseState = false;
+    let sawSseOpen = false;
+    function applyState(nextState: DesignState) {
       sessionBranchRef.current = nextState.branch;
+      sessionStartRef.current = nextState.messages.find(
+        (message) => message.timestamp,
+      )?.timestamp;
       setState(nextState);
       setIsBusy(nextState.isStreaming);
       setThreadItems(messagesToThreadItems(nextState.messages));
       setConnectionStatus("Connected");
-    });
+      if (conversationIdRef.current !== nextState.conversationId) {
+        conversationIdRef.current = nextState.conversationId;
+        refreshTurnRows(nextState.conversationId);
+      }
+    }
 
-    eventSource.addEventListener("pi-event", (messageEvent) => {
+    // SEED: the shared /api/events stream replays `state` only on CONNECT,
+    // and the bus outlives this component — a chat mounted later (full-view
+    // chat tab) would wait forever for the next broadcast. Fetch once; the
+    // first real SSE state wins over a slow seed.
+    void fetch(apiUrl("/api/state"))
+      .then((response) => (response.ok ? response.json() : undefined))
+      .then((payload?: DesignState) => {
+        if (!cancelled && payload && !sawSseState) applyState(payload);
+      })
+      .catch(() => {
+        // Unreachable server — the SSE status handler reports it.
+      });
+
+    // G2: seed/refresh the conversation's turn records (commit ranges).
+    function refreshTurnRows(conversationId: string | undefined) {
+      if (!conversationId) {
+        setTurnRows([]);
+        return;
+      }
+      void fetch(
+        apiUrl(
+          `/api/sandbox/turns?conversationId=${encodeURIComponent(conversationId)}`,
+        ),
+      )
+        .then((response) => response.json())
+        .then((payload: { turns?: ConversationTurnWire[] }) => {
+          if (conversationIdRef.current !== conversationId) return;
+          setTurnRows(turnRowsFromWire(payload.turns ?? []));
+        })
+        .catch(() => {
+          // No server / legacy server — the thread stays row-free.
+        });
+    }
+
+    const unsubscribes = [
+      subscribeApiEvents("state", (messageEvent) => {
+      sawSseState = true;
+      applyState(JSON.parse(messageEvent.data as string) as DesignState);
+      }),
+
+      // G2 history rows: a landed conversation turn announces its commit
+      // range — grow the thread's diff/restore row without a refetch.
+      subscribeApiEvents("sandbox-event", (messageEvent) => {
+      let event: ConversationTurnWire & { type?: string };
+      try {
+        event = JSON.parse(messageEvent.data as string) as ConversationTurnWire & {
+          type?: string;
+        };
+      } catch {
+        return;
+      }
+      if (
+        event.type === "conversation-turn" &&
+        event.conversationId &&
+        event.conversationId === conversationIdRef.current
+      ) {
+        setTurnRows((current) => upsertTurnRecord(current, event));
+      }
+      // Round-2 labels: generated async after the turn lands — update the
+      // matching row in place (no refetch).
+      if (event.type === "turn-label") {
+        setTurnRows((current) =>
+          applyTurnLabel(
+            current,
+            event as { turn?: string; changesetId?: string; label?: string },
+          ),
+        );
+      }
+      }),
+
+      subscribeApiEvents("pi-event", (messageEvent) => {
       const event = JSON.parse(messageEvent.data as string) as PiEvent;
 
       // Drop events from OTHER branches' sessions: an inactive branch's
@@ -339,24 +757,56 @@ function DesignChat({
         return;
       }
 
+      // Elapsed ms since the session's first message (prefer the event's own
+      // timestamp; fall back to arrival time). First message of a fresh
+      // session seeds the origin, so its chip reads +0ms.
+      function elapsedAt(timestamp?: number): number | undefined {
+        if (sessionStartRef.current === undefined) {
+          sessionStartRef.current = timestamp ?? Date.now();
+        }
+        return (timestamp ?? Date.now()) - sessionStartRef.current;
+      }
+
       if (event.type === "agent_start") {
         setIsBusy(true);
+        // Open a fresh activity run for this turn's thinking/tool folds.
+        activityIdRef.current = `activity-live-${Date.now()}`;
       }
 
       if (event.type === "agent_end") {
         setIsBusy(false);
         streamingAssistantIdRef.current = undefined;
+        const activityId = activityIdRef.current;
+        if (activityId) {
+          setThreadItems((currentItems) =>
+            completeActivity(currentItems, activityId, "done"),
+          );
+        }
+        activityIdRef.current = undefined;
       }
 
       if (event.type === "message_start" && event.message) {
-        const liveMessage = toLiveMessage(event.message, `${Date.now()}`);
+        const started = toLiveMessage(event.message, `${Date.now()}`);
 
-        if (!liveMessage) {
+        if (!started) {
           return;
         }
 
+        const liveMessage: DesignMessage = {
+          ...started,
+          at: elapsedAt(event.message.timestamp),
+        };
+
         if (liveMessage.role === "assistant") {
           streamingAssistantIdRef.current = liveMessage.id;
+          // An assistant turn opens with no text — its thinking/tool blocks
+          // stream into the activity row, not a bubble. Upserting the empty
+          // message here would show the old stuck "Thinking…" bubble, so only
+          // create the bubble once there's text/attachments (see message_update
+          // / message_end). User messages still render immediately.
+          if (!liveMessage.text && liveMessage.attachments.length === 0) {
+            return;
+          }
         }
 
         setThreadItems((currentItems) =>
@@ -368,6 +818,24 @@ function DesignChat({
         const delta = event.assistantMessageEvent?.delta;
         const updateType = event.assistantMessageEvent?.type;
 
+        // Thinking chunks fold into the live activity run (they never form a
+        // bubble). appendActivityEntry extends the run's last thinking entry,
+        // so the streamed block accretes rather than fragmenting per delta.
+        if (delta && updateType === "thinking_delta") {
+          const activityId =
+            activityIdRef.current ?? `activity-live-${Date.now()}`;
+          activityIdRef.current = activityId;
+          const at = elapsedAt();
+          setThreadItems((currentItems) =>
+            appendActivityEntry(
+              currentItems,
+              { type: "thinking", text: delta, at },
+              activityId,
+            ),
+          );
+          return;
+        }
+
         if (!delta || updateType !== "text_delta") {
           return;
         }
@@ -376,6 +844,7 @@ function DesignChat({
           streamingAssistantIdRef.current ?? `assistant-stream-${Date.now()}`;
         streamingAssistantIdRef.current = id;
 
+        const streamAt = elapsedAt();
         setThreadItems((currentItems) => {
           const existing = currentItems.find(
             (item): item is DesignMessage =>
@@ -389,17 +858,24 @@ function DesignChat({
             text: `${existing?.text ?? ""}${delta}`,
             attachments: existing?.attachments ?? [],
             status: "Streaming",
+            // The FIRST text delta stamps the bubble's elapsed time.
+            at: existing?.at ?? streamAt,
           });
         });
       }
 
       if (event.type === "message_end" && event.message) {
         const fallbackId = streamingAssistantIdRef.current ?? `${Date.now()}`;
-        const liveMessage = toLiveMessage(event.message, fallbackId);
+        const ended = toLiveMessage(event.message, fallbackId);
 
-        if (!liveMessage) {
+        if (!ended) {
           return;
         }
+
+        const liveMessage: DesignMessage = {
+          ...ended,
+          at: elapsedAt(event.message.timestamp),
+        };
 
         const message =
           event.message.role === "assistant" && streamingAssistantIdRef.current
@@ -411,21 +887,33 @@ function DesignChat({
             : liveMessage;
 
         const errorText = event.message.errorMessage;
-        // A failed turn ends with an empty assistant message; upserting it
-        // would leave a bubble stuck on the "Thinking…" shimmer.
-        const dropEmptyErrored =
-          Boolean(errorText) &&
-          !message.text &&
-          message.attachments.length === 0;
+        // Empty assistant messages never become bubbles: a thinking/tool-only
+        // turn lives entirely in its activity row, and a failed turn's empty
+        // message would leave a bubble stuck on the "Thinking…" shimmer.
+        const isEmpty = !message.text && message.attachments.length === 0;
+        const dropEmpty =
+          event.message.role === "assistant" && isEmpty;
+        const activityId = activityIdRef.current;
 
         setThreadItems((currentItems) => {
-          let nextItems = dropEmptyErrored
+          // Keep the streaming bubble's first-delta chip — message_end fires
+          // at the END of the turn's message.
+          const existing = currentItems.find(
+            (item): item is DesignMessage =>
+              item.kind === "message" && item.id === message.id,
+          );
+          const finalMessage = { ...message, at: existing?.at ?? message.at };
+          let nextItems = dropEmpty
             ? currentItems.filter(
                 (item) => !(item.kind === "message" && item.id === message.id),
               )
-            : upsertMessage(currentItems, message);
+            : upsertMessage(currentItems, finalMessage);
 
           if (errorText) {
+            // Mark the turn's activity run errored, then surface the marker.
+            if (activityId) {
+              nextItems = completeActivity(nextItems, activityId, "error");
+            }
             nextItems = upsertMarker(nextItems, {
               kind: "marker",
               id: `turn-error-${message.id}`,
@@ -443,23 +931,35 @@ function DesignChat({
         }
       }
 
-      if (event.type === "tool_execution_start") {
+      if (
+        event.type === "tool_execution_start" ||
+        event.type === "tool_execution_end"
+      ) {
+        // Tool executions fold into the live activity run as one entry each,
+        // upserted by id so start→end flips running→done/error in place.
+        const status =
+          event.type === "tool_execution_start"
+            ? "running"
+            : event.isError
+              ? "error"
+              : "done";
+        const activityId =
+          activityIdRef.current ?? `activity-live-${Date.now()}`;
+        activityIdRef.current = activityId;
+        // Only the start event stamps `at` — the upsert keeps it on the flip.
+        const at =
+          event.type === "tool_execution_start" ? elapsedAt() : undefined;
         setThreadItems((currentItems) =>
-          upsertMarker(currentItems, getToolMarker(event, "running")),
-        );
-      }
-
-      if (event.type === "tool_execution_end") {
-        setThreadItems((currentItems) =>
-          upsertMarker(
+          appendActivityEntry(
             currentItems,
-            getToolMarker(event, event.isError ? "error" : "done"),
+            toToolEntry(event, status, at),
+            activityId,
           ),
         );
       }
-    });
+      }),
 
-    eventSource.addEventListener("server-notice", (messageEvent) => {
+      subscribeApiEvents("server-notice", (messageEvent) => {
       const payload = JSON.parse(messageEvent.data as string) as {
         message?: string;
       };
@@ -476,9 +976,9 @@ function DesignChat({
           text: payload.message ?? "",
         }),
       );
-    });
+      }),
 
-    eventSource.addEventListener("server-error", (messageEvent) => {
+      subscribeApiEvents("server-error", (messageEvent) => {
       const payload = JSON.parse(messageEvent.data as string) as {
         message?: string;
       };
@@ -492,18 +992,23 @@ function DesignChat({
           text: payload.message ?? "The design agent server reported an error.",
         }),
       );
-    });
+      }),
 
-    eventSource.addEventListener("open", () => {
-      setConnectionStatus("Connected");
-    });
-
-    eventSource.addEventListener("error", () => {
-      setConnectionStatus("Disconnected");
-    });
+      subscribeConnectionStatus((status) => {
+        setConnectionStatus(status === "open" ? "Connected" : "Disconnected");
+        // G4 staleness fix: `conversation-turn` events missed while the
+        // shared stream was released (hidden tab) or down are gone — every
+        // RECONNECT refetches the rows (the sidecar records are the truth).
+        if (status === "open") {
+          if (sawSseOpen) refreshTurnRows(conversationIdRef.current);
+          sawSseOpen = true;
+        }
+      }),
+    ];
 
     return () => {
-      eventSource.close();
+      cancelled = true;
+      for (const unsubscribe of unsubscribes) unsubscribe();
     };
   }, []);
 
@@ -517,6 +1022,26 @@ function DesignChat({
     }
 
     setPrompt("");
+
+    // Interception seam (proto full-view): a selection-scoped prompt routes
+    // through the sandbox pin machinery instead of the main-chat session.
+    if (onPromptIntercept) {
+      const interceptError = (await onPromptIntercept(message)).error;
+      if (interceptError) {
+        setThreadItems((currentItems) =>
+          upsertMarker(currentItems, {
+            kind: "marker",
+            id: `prompt-error-${Date.now()}`,
+            icon: "warning",
+            status: "error",
+            text: interceptError,
+          }),
+        );
+        setPrompt(message);
+      }
+      return;
+    }
+
     // Send-time assembly: the selection-context registry's resolved prompt
     // fragments (whatever has resolved by now) become the context block; the
     // legacy per-field lines are only the empty-registry fallback.
@@ -552,6 +1077,41 @@ function DesignChat({
 
   async function abortTurn() {
     await fetch(apiUrl("/api/abort"), { method: "POST" });
+  }
+
+  // The thread's FIRST user message — the only one that offers edit-and-restart
+  // (Pi transcripts are append-only, so "editing" = new session + re-send).
+  const initialPromptId = threadItems.find(
+    (item): item is DesignMessage =>
+      item.kind === "message" && item.role === "user",
+  )?.id;
+
+  /**
+   * Edit-and-restart: start a FRESH session, then re-send the edited text
+   * verbatim. No context re-assembly — the stored message already contains
+   * whatever context block the original send composed, and the user just
+   * edited exactly what they see.
+   */
+  async function restartWithEditedPrompt(text: string) {
+    await startNewConversation();
+    const response = await fetch(apiUrl("/api/prompt"), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ message: text }),
+    });
+
+    if (!response.ok) {
+      const payload = (await response.json()) as { error?: string };
+      setThreadItems((currentItems) =>
+        upsertMarker(currentItems, {
+          kind: "marker",
+          id: `prompt-error-${Date.now()}`,
+          icon: "warning",
+          status: "error",
+          text: payload.error ?? "Unable to send the message.",
+        }),
+      );
+    }
   }
 
   async function startNewConversation() {
@@ -697,7 +1257,10 @@ function DesignChat({
           <MessageScroller>
             <MessageScrollerViewport>
               <MessageScrollerContent aria-busy={isBusy} className="p-6">
-                {threadItems.map((item) => (
+                {truncateThreadForViewing(
+                  insertTurnRows(threadItems, turnRows),
+                  viewingTurn,
+                ).map((item) => (
                   <MessageScrollerItem
                     key={item.id}
                     messageId={item.id}
@@ -705,7 +1268,16 @@ function DesignChat({
                       item.kind === "message" && item.role === "user"
                     }
                   >
-                    <ThreadItemView item={item} />
+                    <ThreadItemView
+                      item={item}
+                      onRestartEdited={
+                        item.id === initialPromptId
+                          ? restartWithEditedPrompt
+                          : undefined
+                      }
+                      showTimings={state?.showTimings}
+                      renderVariantsRow={renderVariantsRow}
+                    />
                   </MessageScrollerItem>
                 ))}
               </MessageScrollerContent>

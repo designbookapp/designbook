@@ -1,0 +1,46 @@
+diff --git a/packages/excalidraw/components/Card.scss b/packages/excalidraw/components/Card.scss
+index e76d933..c004457 100644
+--- a/packages/excalidraw/components/Card.scss
++++ b/packages/excalidraw/components/Card.scss
+@@ -16,7 +16,7 @@
+       font-size: 2.6em;
+       display: flex;
+       flex: 0 0 auto;
+-      padding: 1.4rem;
++      padding: 0.3rem;
+       border-radius: 50%;
+       background: var(--card-color);
+       color: #fff;
+@@ -30,13 +30,13 @@
+     .Card-details {
+       font-size: 0.96em;
+       min-height: 90px;
+-      padding: 0 1em;
++      padding: 0 0.6em;
+       margin-bottom: auto;
+     }
+ 
+     & .Card-button.ToolIcon_type_button {
+       height: 2.5rem;
+-      margin-top: 1em;
++      margin-top: 0.2em;
+       margin-bottom: 0.3em;
+       background-color: var(--card-color);
+       &:hover {
+diff --git a/packages/excalidraw/locales/en.json b/packages/excalidraw/locales/en.json
+index d8c045d..6c95b96 100644
+--- a/packages/excalidraw/locales/en.json
++++ b/packages/excalidraw/locales/en.json
+@@ -421,9 +421,9 @@
+     "defaultMessage": "Preparing to save..."
+   },
+   "exportDialog": {
+-    "disk_title": "Save to disk",
+-    "disk_details": "Export the scene data to a file from which you can import later.",
+-    "disk_button": "Save to file",
++    "disk_title": "Ts",
++    "disk_details": "Ts",
++    "disk_button": "Testing",
+     "link_title": "Shareable link",
+     "link_details": "Export as a read-only link.",
+     "link_button": "Export to Link",

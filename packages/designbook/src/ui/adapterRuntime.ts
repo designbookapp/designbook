@@ -368,10 +368,20 @@ async function initAdapterRuntime(): Promise<AdapterRuntime> {
 }
 
 let runtime: AdapterRuntime | undefined;
+let runtimePromise: Promise<AdapterRuntime> | undefined;
 
+/**
+ * Initialize (once) and return the runtime. Anchored on the init PROMISE so
+ * concurrent callers — the mount bootstrap and a page-mode sandbox capture
+ * racing it (see captureLive.ts) — share ONE init instead of double-running
+ * adapter setups (`runtime ??= await …` would start two).
+ */
 async function loadAdapterRuntime(): Promise<AdapterRuntime> {
-  runtime ??= await initAdapterRuntime();
-  return runtime;
+  runtimePromise ??= initAdapterRuntime().then((initialized) => {
+    runtime = initialized;
+    return initialized;
+  });
+  return runtimePromise;
 }
 
 /** The initialized runtime. Throws if accessed before `loadAdapterRuntime()`. */
@@ -380,6 +390,11 @@ function getAdapterRuntime(): AdapterRuntime {
     throw new Error("Adapter runtime accessed before initialization.");
   }
   return runtime;
+}
+
+/** Whether `loadAdapterRuntime` has completed (sync probe, never throws). */
+function isAdapterRuntimeReady(): boolean {
+  return runtime !== undefined;
 }
 
 /** Subscribes a component to the live canvas context + resolved values. */
@@ -394,6 +409,7 @@ function useAdapterSnapshot(): AdapterSnapshot {
 
 export {
   getAdapterRuntime,
+  isAdapterRuntimeReady,
   loadAdapterRuntime,
   useAdapterSnapshot,
 };

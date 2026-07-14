@@ -1,0 +1,1303 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>designbook — One product. Every angle.</title>
+<meta name="description" content="designbook renders your running app as a drawing set: one structure, a live view per discipline, every sheet derived from the same code.">
+<style>
+/* ============ tokens ============ */
+:root{
+  --paper:#F7F7F3;
+  --paper-2:#EFEFEA;
+  --sheet:#FDFDFB;
+  --ink:#1B1D1B;
+  --ink-2:#565A55;
+  --ink-3:#8B8F88;
+  --line:#DCDED5;
+  --line-2:#C6C9BE;
+  --grid:rgba(27,29,27,.05);
+  --grid-major:rgba(27,29,27,.09);
+  --design:#3557E8;   --design-soft:#E9EDFC;   --design-deep:#2743C9;
+  --product:#B85C00;  --product-soft:#FAEEDE;  --product-deep:#954A00;
+  --eng:#0E7A55;      --eng-soft:#E2F2EA;      --eng-deep:#0A5F42;
+  --content:#7C3AE3;  --content-soft:#F0E9FC;  --content-deep:#6127BC;
+  --redline:#CF3018;  --redline-soft:#FBE9E5;
+  --navy:#0F1D33; --navy-2:#182A45; --navy-line:rgba(168,196,240,.22);
+  --navy-ink:#CBD9F1; --navy-ink-2:#8CA3C9;
+  --sans:"Avenir Next","Avenir","Segoe UI",system-ui,-apple-system,Roboto,sans-serif;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;
+  --maxw:1180px;
+  --rad:3px;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  font-family:var(--sans);background:var(--paper);color:var(--ink);
+  line-height:1.55;font-size:16.5px;overflow-x:clip;
+  -webkit-font-smoothing:antialiased;
+}
+img,svg{display:block;max-width:100%}
+a{color:inherit;text-decoration:none}
+button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
+::selection{background:#DCE4FB;color:var(--ink)}
+:focus-visible{outline:2px solid var(--design);outline-offset:3px;border-radius:2px}
+.wrap{max-width:var(--maxw);margin:0 auto;padding:0 32px}
+section{padding:112px 0}
+.gridbg{
+  background-image:
+    linear-gradient(var(--grid) 1px,transparent 1px),
+    linear-gradient(90deg,var(--grid) 1px,transparent 1px),
+    linear-gradient(var(--grid-major) 1px,transparent 1px),
+    linear-gradient(90deg,var(--grid-major) 1px,transparent 1px);
+  background-size:24px 24px,24px 24px,120px 120px,120px 120px;
+}
+/* drafting eyebrow: sheet-number annotation */
+.eyebrow{
+  font-family:var(--mono);font-size:11px;letter-spacing:.18em;text-transform:uppercase;
+  color:var(--ink-2);display:inline-flex;align-items:center;gap:12px;margin-bottom:20px;
+}
+.eyebrow::before{content:"";width:26px;height:1px;background:var(--ink);box-shadow:0 -3px 0 var(--ink)}
+h2.sec{font-size:clamp(30px,4.2vw,50px);line-height:1.04;letter-spacing:-.03em;font-weight:700;max-width:19ch}
+.sec-sub{font-size:18px;color:var(--ink-2);max-width:58ch;margin-top:18px}
+.sec-sub b{color:var(--ink);font-weight:600}
+/* reveal */
+.reveal{opacity:0;transform:translateY(24px);transition:opacity .7s cubic-bezier(.2,.7,.2,1),transform .7s cubic-bezier(.2,.7,.2,1)}
+.reveal.in{opacity:1;transform:none}
+.reveal.d1{transition-delay:.08s}.reveal.d2{transition-delay:.16s}.reveal.d3{transition-delay:.24s}
+/* buttons */
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:9px;
+  font-weight:600;font-size:15px;padding:12px 22px;border-radius:6px;
+  transition:transform .16s,box-shadow .16s,background .16s,border-color .16s;
+}
+.btn-primary{background:var(--ink);color:#fff;box-shadow:0 1px 2px rgba(27,29,27,.25)}
+.btn-primary:hover{transform:translateY(-1px);box-shadow:0 8px 20px rgba(27,29,27,.22)}
+.btn-ghost{border:1.5px solid var(--line-2);background:var(--sheet);color:var(--ink)}
+.btn-ghost:hover{border-color:var(--ink-3);transform:translateY(-1px)}
+.btn-lg{padding:15px 26px;font-size:16px}
+.btn-sm{padding:8px 15px;font-size:14px}
+.npm-pill{
+  font-family:var(--mono);font-size:13.5px;color:var(--ink-2);background:var(--sheet);
+  border:1.5px dashed var(--line-2);border-radius:6px;padding:14px 18px;
+  display:inline-flex;align-items:center;gap:12px;transition:border-color .2s,color .2s;
+}
+.npm-pill:hover{border-color:var(--ink);color:var(--ink)}
+.npm-pill .dollar{color:var(--eng)}
+.npm-pill .copied{color:var(--eng);font-size:11px;display:none}
+.npm-pill.did .copied{display:inline}
+
+/* ============ nav ============ */
+.nav{position:fixed;top:0;left:0;right:0;z-index:100;transition:background .3s,box-shadow .3s}
+.nav.scrolled{background:rgba(247,247,243,.88);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);box-shadow:0 1px 0 var(--line)}
+.nav-in{max-width:var(--maxw);margin:0 auto;padding:0 32px;height:66px;display:flex;align-items:center;gap:34px}
+.logo{display:flex;align-items:center;gap:10px;font-weight:700;font-size:18px;letter-spacing:-.02em}
+.nav-links{display:flex;gap:26px;font-size:14.5px;font-weight:500;color:var(--ink-2)}
+.nav-links a{padding:4px 0;border-bottom:2px solid transparent;transition:color .2s,border-color .2s}
+.nav-links a:hover{color:var(--ink);border-bottom-color:var(--ink)}
+.nav-right{margin-left:auto;display:flex;align-items:center;gap:20px}
+.nav-signin{font-size:14.5px;font-weight:500;color:var(--ink-2)}
+.nav-signin:hover{color:var(--ink)}
+
+/* ============ hero ============ */
+.hero{padding:158px 0 0;position:relative}
+.hero h1{font-size:clamp(44px,6.6vw,86px);line-height:1;letter-spacing:-.04em;font-weight:700;max-width:13ch}
+.dim{
+  display:inline-flex;align-items:center;gap:12px;margin-top:20px;
+  font-family:var(--mono);font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-3);
+  white-space:nowrap;
+}
+.dim i{position:relative;display:block;width:72px;height:1px;background:var(--ink-3)}
+.dim i::before,.dim i::after{content:"";position:absolute;top:-4px;width:1px;height:9px;background:var(--ink-3)}
+.dim i:first-child::before{left:0}.dim i:first-child::after{display:none}
+.dim i:last-child::after{right:0}.dim i:last-child::before{display:none}
+.hero-sub{font-size:clamp(17px,1.5vw,20px);color:var(--ink-2);max-width:62ch;margin-top:26px}
+.hero-sub b{color:var(--ink);font-weight:600}
+.hero-ctas{display:flex;align-items:center;gap:14px;margin-top:34px;flex-wrap:wrap}
+.hero-note{font-family:var(--mono);font-size:11.5px;color:var(--ink-3);margin-top:16px;letter-spacing:.02em}
+
+/* ============ stage (the drawing set) ============ */
+.stage{margin-top:64px;padding-bottom:104px}
+.stage-cap{
+  font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3);
+  margin-bottom:14px;display:flex;align-items:center;gap:10px;
+}
+.stage-cap::after{content:"";flex:1;height:1px;background:var(--line)}
+.stage-bar{display:flex;align-items:flex-end;gap:18px;flex-wrap:wrap;margin-bottom:-1px;position:relative;z-index:3}
+.lens-tabs{display:flex;gap:4px;flex-wrap:wrap}
+.lt{
+  display:inline-flex;align-items:center;gap:8px;
+  font-family:var(--mono);font-size:12px;letter-spacing:.04em;
+  padding:10px 16px 11px;background:var(--paper-2);border:1px solid var(--line);
+  border-bottom:none;border-radius:4px 4px 0 0;color:var(--ink-2);
+  position:relative;transition:background .2s,color .2s;
+}
+.lt i{
+  font-style:normal;font-weight:700;font-size:10px;width:16px;height:16px;border-radius:2px;
+  display:inline-grid;place-items:center;color:#fff;background:var(--lc,var(--ink-3));
+}
+.lt::before{content:"";position:absolute;top:-1px;left:-1px;right:-1px;height:3px;background:var(--lc);opacity:0;transition:opacity .2s}
+.lt:hover{color:var(--ink)}
+.lt[aria-pressed="true"]{background:var(--sheet);color:var(--ink);font-weight:600}
+.lt[aria-pressed="true"]::before{opacity:1}
+.zoom-ctl{
+  margin-left:auto;display:inline-flex;border:1px solid var(--line-2);border-radius:5px;overflow:hidden;
+  background:var(--sheet);margin-bottom:6px;
+}
+.zb{
+  font-family:var(--mono);font-size:11.5px;letter-spacing:.04em;padding:9px 15px;color:var(--ink-3);
+  transition:background .2s,color .2s;
+}
+.zb+.zb{border-left:1px solid var(--line)}
+.zb[aria-pressed="true"]{background:var(--ink);color:#fff}
+.sheetfit{position:relative}
+.sheet{
+  width:980px;background:var(--sheet);border:1px solid var(--ink);
+  transform-origin:top left;margin:0 auto;position:relative;
+  box-shadow:0 1px 2px rgba(27,29,27,.06),0 18px 50px rgba(27,29,27,.10);
+}
+/* stacked sheets peeking behind */
+.sheet::before,.sheet::after{
+  content:"";position:absolute;inset:0;border:1px solid var(--line-2);background:var(--sheet);z-index:-1;
+}
+.sheet::before{transform:translate(7px,7px)}
+.sheet::after{transform:translate(14px,14px);border-color:var(--line)}
+.sheet-inner{padding:22px 26px 0;position:relative}
+.sheet-canvas{
+  position:relative;height:470px;border:1px solid var(--line-2);overflow:hidden;
+  background-image:
+    linear-gradient(var(--grid) 1px,transparent 1px),
+    linear-gradient(90deg,var(--grid) 1px,transparent 1px);
+  background-size:24px 24px;
+}
+.sheet-canvas .xh{
+  position:absolute;font-family:var(--mono);font-size:13px;color:var(--line-2);line-height:1;z-index:1;pointer-events:none;
+}
+/* overview / detail layers */
+.ov,.dv{position:absolute;inset:0;transition:opacity .45s cubic-bezier(.2,.7,.2,1),transform .45s cubic-bezier(.2,.7,.2,1)}
+.sheet[data-zoom="overview"] .ov{opacity:1;transform:none}
+.sheet[data-zoom="overview"] .dv{opacity:0;transform:scale(1.05);pointer-events:none}
+.sheet[data-zoom="detail"] .ov{opacity:0;transform:scale(.94);pointer-events:none}
+.sheet[data-zoom="detail"] .dv{opacity:1;transform:none}
+/* wires */
+.wires{position:absolute;inset:0;width:100%;height:100%}
+.wire{stroke:var(--line-2);stroke-width:1;fill:none;stroke-dasharray:3 4}
+.wire-main{stroke:var(--ink-3);stroke-width:1.2;fill:none}
+/* nodes */
+.node{
+  position:absolute;width:168px;height:64px;background:var(--sheet);border:1px solid var(--ink-3);
+  padding:9px 11px 8px;transition:opacity .35s,border-color .35s,box-shadow .35s;
+}
+.node .nl{font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;display:block;color:var(--ink)}
+.node .ns{font-size:10.5px;color:var(--ink-3);display:block;margin-top:1px}
+.node .chips{position:absolute;right:8px;bottom:7px;display:flex;gap:4px}
+.ch{
+  font-family:var(--mono);font-style:normal;font-size:8.5px;font-weight:700;width:13px;height:13px;
+  display:inline-grid;place-items:center;color:#fff;border-radius:2px;transition:opacity .35s,transform .35s;
+}
+.ch-d{background:var(--design)} .ch-p{background:var(--product)}
+.ch-e{background:var(--eng)} .ch-c{background:var(--content)}
+/* lens dimming/highlight */
+.sheet[data-lens="design"] .node:not(.has-d), .sheet[data-lens="product"] .node:not(.has-p),
+.sheet[data-lens="eng"] .node:not(.has-e),   .sheet[data-lens="content"] .node:not(.has-c){opacity:.35}
+.sheet[data-lens="design"] .node.has-d{border-color:var(--design);box-shadow:2px 2px 0 var(--design-soft)}
+.sheet[data-lens="product"] .node.has-p{border-color:var(--product);box-shadow:2px 2px 0 var(--product-soft)}
+.sheet[data-lens="eng"] .node.has-e{border-color:var(--eng);box-shadow:2px 2px 0 var(--eng-soft)}
+.sheet[data-lens="content"] .node.has-c{border-color:var(--content);box-shadow:2px 2px 0 var(--content-soft)}
+.sheet[data-lens="design"] .ch:not(.ch-d), .sheet[data-lens="product"] .ch:not(.ch-p),
+.sheet[data-lens="eng"] .ch:not(.ch-e),   .sheet[data-lens="content"] .ch:not(.ch-c){opacity:.2}
+.sheet[data-lens="design"] .ch-d,.sheet[data-lens="product"] .ch-p,
+.sheet[data-lens="eng"] .ch-e,.sheet[data-lens="content"] .ch-c{transform:scale(1.25)}
+/* legend */
+.legend{
+  position:absolute;right:22px;top:24px;width:186px;border:1px solid var(--ink-3);background:var(--sheet);
+  font-family:var(--mono);font-size:10px;
+}
+.legend h6{
+  font-size:9.5px;letter-spacing:.18em;padding:7px 10px;border-bottom:1px solid var(--line-2);
+  color:var(--ink-2);font-weight:600;
+}
+.lg-row{display:flex;align-items:center;gap:8px;padding:6.5px 10px;color:var(--ink-2);transition:background .3s;border-left:2px solid transparent}
+.lg-row+.lg-row{border-top:1px dashed var(--line)}
+.lg-row .n{margin-left:auto;color:var(--ink-3)}
+.sheet[data-lens="design"] .lg-row[data-for="design"]{background:var(--design-soft);color:var(--ink);border-left-color:var(--design)}
+.sheet[data-lens="product"] .lg-row[data-for="product"]{background:var(--product-soft);color:var(--ink);border-left-color:var(--product)}
+.sheet[data-lens="eng"] .lg-row[data-for="eng"]{background:var(--eng-soft);color:var(--ink);border-left-color:var(--eng)}
+.sheet[data-lens="content"] .lg-row[data-for="content"]{background:var(--content-soft);color:var(--ink);border-left-color:var(--content)}
+/* per-lens annotation */
+.anno{
+  position:absolute;left:470px;top:352px;max-width:260px;
+  font-family:var(--mono);font-size:10.5px;line-height:1.6;color:var(--ink-2);
+  padding:8px 11px 8px 13px;border-left:1px dashed var(--ink-3);
+  opacity:0;transition:opacity .35s;pointer-events:none;
+}
+.anno b{color:var(--ink);font-weight:600}
+.anno::before{content:"";position:absolute;left:-34px;top:14px;width:33px;height:1px;background:var(--ink-3);opacity:.7}
+.sheet[data-lens="design"] .anno[data-for="design"],
+.sheet[data-lens="product"] .anno[data-for="product"],
+.sheet[data-lens="eng"] .anno[data-for="eng"],
+.sheet[data-lens="content"] .anno[data-for="content"]{opacity:1}
+/* scale bar */
+.scalebar{position:absolute;left:24px;bottom:20px;font-family:var(--mono);font-size:9px;color:var(--ink-3)}
+.scalebar .bar{display:flex;height:6px;width:180px;border:1px solid var(--ink-3);margin-bottom:4px}
+.scalebar .bar i{flex:1}
+.scalebar .bar i:nth-child(odd){background:var(--ink-3)}
+.scalebar .lab{display:flex;justify-content:space-between;letter-spacing:.06em}
+/* detail views */
+.detail{
+  position:absolute;inset:0;padding:36px 40px;display:flex;flex-direction:column;gap:18px;
+  opacity:0;pointer-events:none;transition:opacity .35s;
+}
+.sheet[data-lens="design"] .detail[data-for="design"],
+.sheet[data-lens="product"] .detail[data-for="product"],
+.sheet[data-lens="eng"] .detail[data-for="eng"],
+.sheet[data-lens="content"] .detail[data-for="content"]{opacity:1;pointer-events:auto}
+.d-head{
+  font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-2);
+  display:flex;align-items:center;gap:12px;
+}
+.d-head .dot{width:9px;height:9px;border-radius:2px;background:var(--lc)}
+.d-head::after{content:"";flex:1;height:1px;background:var(--line-2)}
+.d-grid{display:grid;grid-template-columns:1.15fr .85fr;gap:28px;flex:1;min-height:0;align-items:center}
+.d-pane{border:1px solid var(--line-2);background:#fff}
+.d-pane-head{
+  font-family:var(--mono);font-size:10px;color:var(--ink-3);letter-spacing:.06em;
+  padding:8px 13px;border-bottom:1px solid var(--line);display:flex;gap:8px;align-items:center;
+}
+.d-pane-head .fdot{width:7px;height:7px;border-radius:50%;background:var(--line-2)}
+.d-cap{font-size:14px;color:var(--ink-2);max-width:34ch}
+.d-cap b{color:var(--ink);font-weight:600}
+.d-cap .m{font-family:var(--mono);font-size:12px;background:var(--paper-2);padding:1px 5px;border-radius:2px}
+/* token rows */
+.tok{display:flex;align-items:center;gap:10px;padding:9px 13px;font-family:var(--mono);font-size:11.5px}
+.tok+.tok{border-top:1px dashed var(--line)}
+.tok .sw{width:16px;height:16px;border-radius:2px;border:1px solid rgba(0,0,0,.12);flex-shrink:0}
+.tok .tn{color:var(--ink-2)}
+.tok .tv{margin-left:auto;color:var(--ink-3)}
+.tok.hot{background:var(--design-soft)}
+.tok.hot .old{text-decoration:line-through;opacity:.5;margin-right:6px}
+.tok.hot .new{color:var(--design-deep);font-weight:700}
+/* preview card in design detail */
+.pv{width:210px;margin:0 auto;background:#fff;border:1px solid var(--line);border-radius:10px;overflow:hidden;box-shadow:0 10px 26px rgba(27,29,27,.10)}
+.pv .pvi{height:64px;background:linear-gradient(135deg,#DDE5F9,#AFC2F2)}
+.pv .pvb{padding:12px 14px 14px}
+.pv .pvt{font-weight:600;font-size:13px;letter-spacing:-.01em}
+.pv .pvs{font-size:10.5px;color:var(--ink-3);margin-top:2px}
+.pv .pvbtn{margin-top:11px;background:var(--design-deep);color:#fff;font-size:11.5px;font-weight:600;border-radius:7px;padding:7px 0;width:100%;text-align:center}
+/* strings */
+.str{display:flex;gap:12px;align-items:baseline;padding:9px 13px;font-size:12.5px}
+.str+.str{border-top:1px dashed var(--line)}
+.str b{font-family:var(--mono);font-size:10px;color:var(--ink-3);width:22px;flex-shrink:0;font-weight:600}
+.str.hot{background:var(--content-soft)}
+.str.hot span{color:var(--content-deep);font-weight:600}
+/* code panes */
+.codepre{
+  font-family:var(--mono);font-size:11px;line-height:1.9;padding:13px 16px;color:var(--ink-2);
+  overflow-x:auto;white-space:pre;
+}
+.codepre .k{color:var(--design-deep)} .codepre .s{color:var(--product-deep)}
+.codepre .c{color:var(--ink-3)} .codepre .g{color:var(--eng-deep);font-weight:600}
+.codepre .hl{background:var(--product-soft);display:inline-block;width:100%}
+/* flag toggles in product detail */
+.fl{display:flex;align-items:center;gap:10px;padding:9px 13px;font-family:var(--mono);font-size:11.5px;color:var(--ink-2)}
+.fl+.fl{border-top:1px dashed var(--line)}
+.fl .tg{margin-left:auto;width:28px;height:16px;border-radius:99px;background:var(--line-2);position:relative;flex-shrink:0}
+.fl .tg::after{content:"";position:absolute;top:2px;left:2px;width:12px;height:12px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.25)}
+.fl .tg.on{background:var(--eng)}
+.fl .tg.on::after{left:14px}
+.fl.hot{background:var(--product-soft)}
+/* title block */
+.titleblock{
+  display:grid;grid-template-columns:1.6fr 1.5fr .9fr .9fr 2fr;border:1px solid var(--ink);border-top:none;
+  margin:0 -26px;margin-top:22px;border-left:none;border-right:none;border-bottom:none;
+  border-top:1px solid var(--ink);
+}
+.tb-cell{padding:10px 16px 12px;border-right:1px solid var(--line-2);min-width:0}
+.tb-cell:last-child{border-right:none}
+.tb-cell .l{font-family:var(--mono);font-size:8.5px;letter-spacing:.2em;text-transform:uppercase;color:var(--ink-3);display:block}
+.tb-cell .v{font-family:var(--mono);font-size:12px;color:var(--ink);margin-top:3px;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tb-cell .v .stamp{color:var(--eng-deep);font-weight:700}
+
+/* ============ logo strip ============ */
+.strip{padding:60px 0 6px}
+.strip-label{text-align:center;font-family:var(--mono);font-size:10.5px;letter-spacing:.2em;text-transform:uppercase;color:var(--ink-3)}
+.strip-logos{display:flex;justify-content:center;align-items:baseline;gap:52px;flex-wrap:wrap;margin-top:28px;color:#A9ACA2}
+.strip-logos span{font-size:18px;font-weight:700;letter-spacing:-.01em;transition:color .25s}
+.strip-logos span:hover{color:var(--ink)}
+.sl-serif{font-family:Georgia,serif;font-style:italic;font-weight:400}
+.sl-mono{font-family:var(--mono);font-size:15px!important;letter-spacing:.04em!important}
+.sl-wide{letter-spacing:.24em!important;font-size:14px!important;text-transform:uppercase}
+
+/* ============ views (plan/elevation/section/schedule) ============ */
+.views-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:0;margin-top:60px;border:1px solid var(--ink)}
+.view-card{padding:26px 24px 30px;border-right:1px solid var(--line-2);background:var(--sheet);position:relative;min-width:0}
+.view-card:last-child{border-right:none}
+.view-card::before{content:"";position:absolute;top:0;left:0;right:0;height:3px;background:var(--lc)}
+.vc-no{font-family:var(--mono);font-size:10px;letter-spacing:.16em;color:var(--ink-3);display:flex;justify-content:space-between;margin-bottom:18px}
+.vc-no .for{color:var(--lc);font-weight:700}
+.view-card h3{font-size:21px;font-weight:700;letter-spacing:-.02em;line-height:1.1}
+.view-card .verb{font-size:14.5px;font-weight:600;margin-top:14px;color:var(--ink)}
+.view-card p{font-size:13.5px;color:var(--ink-2);margin-top:7px}
+.view-card p code{font-family:var(--mono);font-size:11.5px;background:var(--paper-2);padding:1px 5px;border-radius:2px}
+.views-foot{
+  margin-top:26px;font-family:var(--mono);font-size:11.5px;letter-spacing:.04em;color:var(--ink-2);
+  display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+}
+.views-foot::before{content:"※";color:var(--ink-3)}
+
+/* ============ change feed / clash ============ */
+.sec-feed{background:var(--sheet);border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.feed-ctx{
+  margin-top:52px;border:1px solid var(--ink);background:var(--paper);
+  display:flex;align-items:center;gap:18px;padding:13px 18px;font-family:var(--mono);font-size:12px;
+  color:var(--ink-2);flex-wrap:wrap;
+}
+.feed-ctx .br{color:var(--ink);font-weight:700}
+.feed-ctx .sep{color:var(--line-2)}
+.feed-ctx .who{margin-left:auto;display:flex;align-items:center;gap:8px}
+.feed-ctx .who i{width:18px;height:18px;border-radius:50%;background:linear-gradient(135deg,#C7B9F2,#7C3AE3);display:inline-block}
+.feed-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:18px}
+.fc{
+  border:1px solid var(--line-2);background:var(--paper);padding:22px 22px 20px;position:relative;min-width:0;
+  transition:border-color .2s,box-shadow .2s;
+}
+.fc:hover{border-color:var(--ink-3);box-shadow:0 12px 30px rgba(27,29,27,.07)}
+.fc-top{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+.fc-lens{
+  font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.12em;color:var(--lc);
+  border:1px solid var(--lc);padding:3px 9px;border-radius:2px;
+}
+.fc-status{
+  margin-left:auto;font-family:var(--mono);font-size:9.5px;letter-spacing:.16em;color:var(--ink-3);
+}
+.fc h3{font-size:19px;font-weight:700;letter-spacing:-.02em}
+.fc>p{font-size:14px;color:var(--ink-2);margin-top:7px;max-width:52ch}
+.fc>p code{font-family:var(--mono);font-size:12px;background:var(--paper-2);padding:1px 5px;border-radius:2px}
+.fc-zoom{
+  margin-top:16px;font-family:var(--mono);font-size:11px;letter-spacing:.08em;color:var(--ink);
+  display:inline-flex;align-items:center;gap:7px;border-bottom:1px solid var(--ink-3);padding-bottom:2px;
+}
+.fc-zoom::after{content:"↘";transition:transform .2s}
+.fc.open .fc-zoom::after{content:"↖"}
+.fc-detail{display:none;margin-top:16px;border:1px solid var(--line-2);background:var(--sheet)}
+.fc.open .fc-detail{display:block}
+.fc-detail pre{font-family:var(--mono);font-size:11.5px;line-height:1.85;padding:13px 16px;color:var(--ink-2);overflow-x:auto}
+.fc-detail .file{color:var(--ink-3)}
+.fc-detail .add{color:var(--eng-deep)} .fc-detail .del{color:var(--redline)}
+.fc-detail .warn{color:var(--redline);font-weight:700}
+/* clash card */
+.fc.clash{border:1.5px solid var(--redline);background:#FDF6F4}
+.fc.clash:hover{border-color:var(--redline)}
+.fc.clash .fc-status{color:var(--redline);font-weight:700;margin-right:78px}
+.fc-stamp{
+  position:absolute;top:16px;right:-9px;transform:rotate(6deg);
+  font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.22em;color:var(--redline);
+  border:1.5px solid var(--redline);padding:4px 10px 4px 12px;background:#FDF6F4;
+}
+.feed-note{
+  margin-top:34px;max-width:56ch;font-size:15px;color:var(--ink-2);
+  border-left:2px solid var(--ink);padding-left:18px;
+}
+.feed-note b{color:var(--ink);font-weight:600}
+
+/* ============ agents (navy blueprint) ============ */
+.sec-agents{background:var(--navy);color:var(--navy-ink);position:relative}
+.sec-agents .gridlay{
+  position:absolute;inset:0;opacity:.5;pointer-events:none;
+  background-image:
+    linear-gradient(rgba(168,196,240,.06) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(168,196,240,.06) 1px,transparent 1px);
+  background-size:24px 24px;
+}
+.sec-agents .wrap{position:relative}
+.sec-agents .eyebrow{color:var(--navy-ink-2)}
+.sec-agents .eyebrow::before{background:var(--navy-ink-2);box-shadow:0 -3px 0 var(--navy-ink-2)}
+.sec-agents h2.sec{color:#fff}
+.sec-agents .sec-sub{color:var(--navy-ink-2)}
+.sec-agents .sec-sub b{color:#fff}
+.agents-grid{display:grid;grid-template-columns:.9fr 1.1fr;gap:56px;margin-top:56px;align-items:center}
+.ag-list{display:flex;flex-direction:column}
+.ag-item{padding:20px 0;border-top:1px solid var(--navy-line)}
+.ag-item:last-child{border-bottom:1px solid var(--navy-line)}
+.ag-item h4{font-family:var(--mono);font-size:12.5px;letter-spacing:.04em;color:#fff;font-weight:600}
+.ag-item p{font-size:14px;color:var(--navy-ink-2);margin-top:6px;max-width:44ch}
+.ag-item p b{color:var(--navy-ink);font-weight:600}
+.sitelog{border:1px solid var(--navy-line);background:var(--navy-2);min-width:0}
+.sitelog-head{
+  display:flex;align-items:center;gap:10px;padding:12px 18px;border-bottom:1px solid var(--navy-line);
+  font-family:var(--mono);font-size:11px;color:var(--navy-ink-2);letter-spacing:.06em;flex-wrap:wrap;
+}
+.sitelog-head .rb{color:#fff;font-weight:700}
+.sitelog-head .live{margin-left:auto;display:inline-flex;align-items:center;gap:7px;color:#7FD6AC}
+.sitelog-head .live i{width:7px;height:7px;border-radius:50%;background:#7FD6AC;animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(127,214,172,.5)}60%{box-shadow:0 0 0 6px rgba(127,214,172,0)}}
+.sitelog-body{padding:18px 20px 20px;font-family:var(--mono);font-size:12px;line-height:2.05}
+.sitelog-body .task{color:#fff;font-size:12.5px}
+.sitelog-body .meta{color:var(--navy-ink-2);font-size:11px}
+.sitelog-body .rule{height:1px;background:var(--navy-line);margin:12px 0}
+.sitelog-body .rh{font-size:9.5px;letter-spacing:.22em;color:var(--navy-ink-2)}
+.slrow{display:flex;gap:10px;align-items:baseline}
+.slrow .ok{color:#7FD6AC}
+.slrow .flag{color:#FF9E8A}
+.slrow .zoomlink{margin-left:auto;color:#fff;border-bottom:1px solid var(--navy-ink-2);font-size:10.5px;letter-spacing:.06em;white-space:nowrap}
+.slrow .zoomlink:hover{border-bottom-color:#fff}
+
+/* ============ spec (derived, not drawn) ============ */
+.sec-spec{background:var(--paper-2)}
+.spec-grid{display:grid;grid-template-columns:1fr 1fr;gap:64px;margin-top:56px;align-items:start}
+.trust-list{display:flex;flex-direction:column}
+.trust-item{padding:20px 0;border-top:1px solid var(--line-2)}
+.trust-item:last-child{border-bottom:1px solid var(--line-2)}
+.trust-item h4{font-family:var(--mono);font-size:12.5px;font-weight:600;letter-spacing:.02em}
+.trust-item p{font-size:14px;color:var(--ink-2);margin-top:6px;max-width:46ch}
+.trust-item p code{font-family:var(--mono);font-size:11.5px;background:#fff;border:1px solid var(--line);padding:1px 5px;border-radius:2px}
+.config-pane{background:var(--navy);border:1px solid var(--navy);overflow:hidden;box-shadow:0 24px 56px rgba(15,29,51,.22);position:sticky;top:96px}
+.config-head{display:flex;align-items:center;gap:9px;padding:11px 16px;background:var(--navy-2);font-family:var(--mono);font-size:11px;color:var(--navy-ink-2)}
+.config-head i{width:8px;height:8px;border-radius:50%;background:rgba(168,196,240,.25);display:inline-block}
+.config-pane pre{font-family:var(--mono);font-size:12px;line-height:1.95;padding:18px 20px;color:var(--navy-ink);overflow-x:auto}
+.ck{color:#8FB8FF}.cs{color:#F5C98A}.cc{color:#647FA6}.cg{color:#7FD6AC}
+.onboard{display:grid;grid-template-columns:repeat(3,1fr);gap:0;margin-top:56px;border:1px solid var(--ink);background:var(--sheet)}
+.ob{padding:22px 24px;border-right:1px solid var(--line-2);min-width:0}
+.ob:last-child{border-right:none}
+.ob .obn{font-family:var(--mono);font-size:10px;letter-spacing:.2em;color:var(--ink-3);display:block;margin-bottom:10px}
+.ob h4{font-size:16px;font-weight:700;letter-spacing:-.01em}
+.ob p{font-size:13.5px;color:var(--ink-2);margin-top:5px}
+
+/* ============ quote ============ */
+.sec-quote{padding:120px 0}
+.bigquote{
+  font-size:clamp(23px,3vw,37px);line-height:1.3;letter-spacing:-.02em;font-weight:600;
+  max-width:24ch;margin:0 auto;text-align:center;
+}
+.bigquote .m{font-family:var(--mono);font-size:.72em;font-weight:600;background:var(--paper-2);padding:2px 10px;border-radius:3px;white-space:nowrap}
+.quote-att{display:flex;align-items:center;justify-content:center;gap:13px;margin-top:34px}
+.quote-att .qa{width:40px;height:40px;border-radius:50%;background:linear-gradient(135deg,#9AB2E8,#3557E8)}
+.quote-att .qn{font-size:14px;font-weight:700;text-align:left}
+.quote-att .qr{font-size:12.5px;color:var(--ink-3)}
+
+/* ============ pricing ============ */
+.sec-pricing{background:var(--sheet);border-top:1px solid var(--line)}
+.price-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:0;margin-top:60px;border:1px solid var(--ink);align-items:stretch}
+.plan{padding:26px 24px 24px;border-right:1px solid var(--line-2);display:flex;flex-direction:column;position:relative;background:var(--sheet);min-width:0}
+.plan:last-child{border-right:none}
+.plan.hot{background:var(--paper);box-shadow:inset 0 3px 0 var(--ink)}
+.plan-flag{
+  position:absolute;top:-11px;left:22px;background:var(--ink);color:#fff;font-family:var(--mono);
+  font-size:9.5px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;padding:4px 11px;
+}
+.plan h3{font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.14em;text-transform:uppercase}
+.plan-price{margin-top:14px;font-size:36px;font-weight:700;letter-spacing:-.03em;line-height:1}
+.plan-price small{font-size:12.5px;font-weight:500;color:var(--ink-3);letter-spacing:0}
+.plan-note{font-size:12px;color:var(--ink-2);font-weight:600;margin-top:7px;min-height:18px}
+.plan ul{list-style:none;margin:18px 0 24px;flex:1}
+.plan li{font-size:13.5px;color:var(--ink-2);padding:5.5px 0 5.5px 20px;position:relative}
+.plan li::before{content:"—";position:absolute;left:0;color:var(--ink-3)}
+.plan .btn{width:100%}
+.credits-note{margin-top:26px;text-align:center;font-size:13.5px;color:var(--ink-2)}
+.credits-note b{color:var(--ink)}
+.pricing-foot{text-align:center;font-size:11px;color:var(--ink-3);margin-top:10px;font-family:var(--mono);letter-spacing:.08em}
+
+/* ============ footer cta + footer ============ */
+.sec-cta{
+  background:var(--navy);color:#fff;padding:140px 0 120px;position:relative;overflow:hidden;
+}
+.sec-cta .gridlay{
+  position:absolute;inset:0;pointer-events:none;
+  background-image:
+    linear-gradient(rgba(168,196,240,.07) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(168,196,240,.07) 1px,transparent 1px);
+  background-size:24px 24px;
+}
+.sec-cta .wrap{position:relative;text-align:center}
+.sec-cta h2{font-size:clamp(34px,5vw,62px);line-height:1.04;letter-spacing:-.035em;font-weight:700;max-width:19ch;margin:0 auto}
+.sec-cta .cta-sub{font-family:var(--mono);font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:var(--navy-ink-2);margin-top:22px}
+.cta-ctas{display:flex;justify-content:center;gap:14px;margin-top:40px;flex-wrap:wrap}
+.btn-invert{background:#fff;color:var(--navy)}
+.btn-invert:hover{transform:translateY(-1px);box-shadow:0 10px 26px rgba(0,0,0,.35)}
+.btn-outline{border:1.5px solid rgba(255,255,255,.3);color:#fff}
+.btn-outline:hover{border-color:rgba(255,255,255,.65);transform:translateY(-1px)}
+footer{background:var(--navy);color:var(--navy-ink-2);border-top:1px solid var(--navy-line);padding:60px 0 42px}
+.foot-grid{display:grid;grid-template-columns:1.4fr repeat(4,1fr);gap:32px}
+.foot-brand .logo{color:#fff;margin-bottom:14px}
+.foot-brand p{font-size:13px;max-width:26ch}
+.foot-col h5{font-family:var(--mono);font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:#5F7599;margin-bottom:16px;font-weight:600}
+.foot-col a{display:block;font-size:13.5px;padding:5px 0;transition:color .2s}
+.foot-col a:hover{color:#fff}
+.foot-base{
+  display:flex;align-items:center;gap:20px;margin-top:54px;padding-top:24px;
+  border-top:1px solid var(--navy-line);font-size:12px;flex-wrap:wrap;
+}
+.foot-base .rule-line{flex:1;height:1px;background:var(--navy-line);min-width:60px}
+.concept-note{font-family:var(--mono);font-size:10px;letter-spacing:.06em;color:#5F7599}
+
+/* ============ responsive ============ */
+@media (max-width:1020px){
+  .views-grid{grid-template-columns:1fr 1fr;border:none;gap:14px}
+  .view-card{border:1px solid var(--line-2)}
+  .agents-grid,.spec-grid{grid-template-columns:1fr;gap:36px}
+  .config-pane{position:static}
+  .price-grid{grid-template-columns:1fr 1fr;border:none;gap:14px}
+  .plan{border:1px solid var(--line-2)}
+  .plan.hot{box-shadow:inset 0 3px 0 var(--ink),0 12px 32px rgba(27,29,27,.08)}
+  .foot-grid{grid-template-columns:1fr 1fr;gap:28px}
+  .nav-links{display:none}
+  section{padding:88px 0}
+}
+@media (max-width:860px){
+  .feed-grid{grid-template-columns:1fr}
+  .onboard{grid-template-columns:1fr}
+  .ob{border-right:none;border-bottom:1px solid var(--line-2)}
+  .ob:last-child{border-bottom:none}
+}
+@media (max-width:640px){
+  .wrap,.nav-in{padding-left:20px;padding-right:20px}
+  .nav-signin{display:none}
+  section{padding:76px 0}
+  .hero{padding-top:124px}
+  .hero-ctas .btn-lg{width:100%}
+  .npm-pill{width:100%;justify-content:center}
+  .views-grid,.price-grid{grid-template-columns:1fr}
+  .stage-bar{align-items:stretch;flex-direction:column;gap:10px}
+  .lens-tabs{gap:4px}
+  .lt{flex:1;justify-content:center;padding:9px 6px;font-size:11px;border-bottom:1px solid var(--line);border-radius:4px}
+  .lt[aria-pressed="true"]{border-color:var(--ink)}
+  .zoom-ctl{margin-left:0;margin-bottom:2px}
+  .zb{flex:1}
+  .sheet{border-width:1px}
+  .foot-grid{grid-template-columns:1fr}
+  .strip-logos{gap:26px}
+  .feed-ctx .who{margin-left:0}
+  .dim i{width:40px}
+}
+
+/* ============ reduced motion ============ */
+@media (prefers-reduced-motion: reduce){
+  html{scroll-behavior:auto}
+  *,*::before,*::after{animation:none!important;transition:none!important}
+  .reveal{opacity:1!important;transform:none!important}
+}
+</style>
+</head>
+<body>
+
+<!-- ================= NAV ================= -->
+<header class="nav" id="nav">
+  <div class="nav-in">
+    <a class="logo" href="#" aria-label="designbook home">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <rect x="7.5" y="1.5" width="15" height="15" stroke="#3557E8" stroke-width="1.5"/>
+        <rect x="4.5" y="4.5" width="15" height="15" fill="#F7F7F3" stroke="#B85C00" stroke-width="1.5"/>
+        <rect x="1.5" y="7.5" width="15" height="15" fill="#F7F7F3" stroke="#1B1D1B" stroke-width="1.5"/>
+        <path d="M1.5 22.5 L16.5 7.5" stroke="#1B1D1B" stroke-width="1.5"/>
+      </svg>
+      designbook
+    </a>
+    <nav class="nav-links" aria-label="Main">
+      <a href="#views">The set</a>
+      <a href="#clash">Clash detection</a>
+      <a href="#agents">Agents</a>
+      <a href="#pricing">Pricing</a>
+      <a href="#">Docs</a>
+    </nav>
+    <div class="nav-right">
+      <a class="nav-signin" href="#">Sign in</a>
+      <a class="btn btn-primary btn-sm" href="#">Connect GitHub</a>
+    </div>
+  </div>
+</header>
+
+<!-- ================= HERO ================= -->
+<section class="hero gridbg" id="top">
+  <div class="wrap">
+    <p class="eyebrow">The product development tool for the whole team</p>
+    <h1>One product.<br>Every angle.</h1>
+    <div class="dim" aria-hidden="true"><i></i><span>one codebase, end to end</span><i></i></div>
+    <p class="hero-sub">designbook opens your running app as a <b>drawing set</b> — one structure, a live view per discipline, every sheet derived from the same code. Designers read tokens. Product reads flags and flows. Writers read every string, in every language. Engineers read the code itself. Edit your sheet and the change lands in the codebase — where every other view picks it up.</p>
+    <div class="hero-ctas">
+      <a class="btn btn-primary btn-lg" href="#">
+        <svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
+        Connect your GitHub repo
+      </a>
+      <button class="npm-pill" id="npmPill" type="button" aria-label="Copy npm install command">
+        <span><span class="dollar">$</span> npm i designbook</span>
+        <span class="copied">copied</span>
+      </button>
+    </div>
+    <p class="hero-note">RUNS INSIDE YOUR REAL APP AS AN NPM PLUGIN · NO PARALLEL BUILD · NOTHING DRAWN BY HAND</p>
+  </div>
+
+  <!-- ======== the drawing set ======== -->
+  <div class="wrap stage">
+    <p class="stage-cap">Live sheet · acme/meridian — switch the lens, change the zoom</p>
+    <div class="stage-bar">
+      <div class="lens-tabs" role="group" aria-label="Choose a discipline lens">
+        <button class="lt" data-lens-btn="design"  style="--lc:var(--design)"  aria-pressed="true"><i>A</i>Design</button>
+        <button class="lt" data-lens-btn="product" style="--lc:var(--product)" aria-pressed="false"><i>P</i>Product</button>
+        <button class="lt" data-lens-btn="eng"     style="--lc:var(--eng)"     aria-pressed="false"><i>S</i>Engineering</button>
+        <button class="lt" data-lens-btn="content" style="--lc:var(--content)" aria-pressed="false"><i>C</i>Content</button>
+      </div>
+      <div class="zoom-ctl" role="group" aria-label="Zoom level">
+        <button class="zb" data-zoom-btn="overview" aria-pressed="true">1:100 · Overview</button>
+        <button class="zb" data-zoom-btn="detail" aria-pressed="false">1:1 · Detail</button>
+      </div>
+    </div>
+    <div class="sheetfit" id="sheetFit">
+      <div class="sheet" id="sheet" data-lens="design" data-zoom="overview">
+        <div class="sheet-inner">
+          <div class="sheet-canvas">
+            <span class="xh" style="top:8px;left:10px" aria-hidden="true">+</span>
+            <span class="xh" style="bottom:8px;right:10px" aria-hidden="true">+</span>
+
+            <!-- ===== overview (1:100) ===== -->
+            <div class="ov">
+              <svg class="wires" viewBox="0 0 926 468" preserveAspectRatio="none" aria-hidden="true">
+                <path class="wire-main" d="M196 62 H268"/>
+                <path class="wire" d="M196 180 H268"/>
+                <path class="wire" d="M196 298 H236 V188 H268"/>
+                <path class="wire-main" d="M352 94 V148"/>
+                <path class="wire-main" d="M352 212 V266"/>
+                <path class="wire-main" d="M436 298 H472 V188 H508"/>
+                <path class="wire" d="M592 212 V266"/>
+              </svg>
+
+              <div class="node has-d has-c" style="left:28px;top:30px">
+                <span class="nl">Home</span><span class="ns">route /</span>
+                <span class="chips"><i class="ch ch-d">d</i><i class="ch ch-c">c</i></span>
+              </div>
+              <div class="node has-d has-e" style="left:28px;top:148px">
+                <span class="nl">Search</span><span class="ns">route /search</span>
+                <span class="chips"><i class="ch ch-d">d</i><i class="ch ch-e">e</i></span>
+              </div>
+              <div class="node has-c has-e" style="left:28px;top:266px">
+                <span class="nl">Account</span><span class="ns">route /account</span>
+                <span class="chips"><i class="ch ch-c">c</i><i class="ch ch-e">e</i></span>
+              </div>
+              <div class="node has-d has-p has-c" style="left:268px;top:30px">
+                <span class="nl">Select time</span><span class="ns">booking · step 1</span>
+                <span class="chips"><i class="ch ch-d">d</i><i class="ch ch-p">p</i><i class="ch ch-c">c</i></span>
+              </div>
+              <div class="node has-c has-e" style="left:268px;top:148px">
+                <span class="nl">Details</span><span class="ns">booking · step 2</span>
+                <span class="chips"><i class="ch ch-c">c</i><i class="ch ch-e">e</i></span>
+              </div>
+              <div class="node has-d has-p has-c has-e" style="left:268px;top:266px">
+                <span class="nl">Pay</span><span class="ns">booking · step 3</span>
+                <span class="chips"><i class="ch ch-d">d</i><i class="ch ch-p">p</i><i class="ch ch-c">c</i><i class="ch ch-e">e</i></span>
+              </div>
+              <div class="node has-e has-p" style="left:508px;top:30px">
+                <span class="nl">Admin</span><span class="ns">route /admin</span>
+                <span class="chips"><i class="ch ch-p">p</i><i class="ch ch-e">e</i></span>
+              </div>
+              <div class="node has-d has-c" style="left:508px;top:148px">
+                <span class="nl">Confirmation</span><span class="ns">booking · done</span>
+                <span class="chips"><i class="ch ch-d">d</i><i class="ch ch-c">c</i></span>
+              </div>
+              <div class="node has-c has-p" style="left:508px;top:266px">
+                <span class="nl">Email · confirmed</span><span class="ns">transactional</span>
+                <span class="chips"><i class="ch ch-p">p</i><i class="ch ch-c">c</i></span>
+              </div>
+
+              <div class="legend" aria-hidden="true">
+                <h6>Key · one structure</h6>
+                <div class="lg-row" data-for="design"><i class="ch ch-d">d</i>tokens<span class="n">38</span></div>
+                <div class="lg-row" data-for="product"><i class="ch ch-p">p</i>flags<span class="n">6</span></div>
+                <div class="lg-row" data-for="content"><i class="ch ch-c">c</i>strings<span class="n">214</span></div>
+                <div class="lg-row" data-for="eng"><i class="ch ch-e">e</i>files<span class="n">1,204</span></div>
+              </div>
+
+              <div class="anno" data-for="design"><b>--color-accent</b> · used 14× on this sheet · defined once in <b>tokens.css</b></div>
+              <div class="anno" data-for="product"><b>booking_v2</b> gates this step · 1 tenant override · flow order unchanged</div>
+              <div class="anno" data-for="eng"><b>BookingPay.tsx</b> · 96 lines · reads 2 tokens, 1 flag, 9 strings</div>
+              <div class="anno" data-for="content"><b>9 strings</b> here · en de ja · 1 overflow risk (de)</div>
+
+              <div class="scalebar" aria-hidden="true">
+                <div class="bar"><i></i><i></i><i></i><i></i></div>
+                <div class="lab"><span>0</span><span>4</span><span>8 screens</span></div>
+              </div>
+            </div>
+
+            <!-- ===== detail (1:1) ===== -->
+            <div class="dv">
+              <div class="detail" data-for="design" style="--lc:var(--design)">
+                <div class="d-head"><span class="dot"></span>Detail 01 · theme/tokens.css · scale 1:1</div>
+                <div class="d-grid">
+                  <div class="d-pane">
+                    <div class="d-pane-head"><span class="fdot"></span>src/theme/tokens.css</div>
+                    <div class="tok hot"><span class="sw" style="background:#2743C9"></span><span class="tn">--color-accent</span><span class="tv"><span class="old">#3557E8</span><span class="new">#2743C9</span></span></div>
+                    <div class="tok"><span class="sw" style="background:#1B1D1B"></span><span class="tn">--color-ink</span><span class="tv">#1B1D1B</span></div>
+                    <div class="tok hot"><span class="sw" style="background:#fff;display:grid;place-items:center;font-size:8px">◱</span><span class="tn">--radius-card</span><span class="tv"><span class="old">8px</span><span class="new">14px</span></span></div>
+                    <div class="tok"><span class="sw" style="background:#fff;display:grid;place-items:center;font-size:8px">Aa</span><span class="tn">--font-display</span><span class="tv">Archivo 600</span></div>
+                  </div>
+                  <div>
+                    <div class="pv" aria-hidden="true">
+                      <div class="pvi"></div>
+                      <div class="pvb">
+                        <div class="pvt">Thu 14 · 09:30</div>
+                        <div class="pvs">Dr. Okafor · 25 min</div>
+                        <div class="pvbtn">Confirm booking</div>
+                      </div>
+                    </div>
+                    <p class="d-cap" style="margin-top:18px">A color here is a <b>CSS custom property in your repo</b>. This preview is your real component rendering it.</p>
+                  </div>
+                </div>
+              </div>
+
+              <div class="detail" data-for="product" style="--lc:var(--product)">
+                <div class="d-head"><span class="dot"></span>Detail 02 · flags/meridian.json · scale 1:1</div>
+                <div class="d-grid">
+                  <div class="d-pane">
+                    <div class="d-pane-head"><span class="fdot"></span>flags/meridian.json</div>
+                    <pre class="codepre">{
+  <span class="s">"booking_v2"</span>: {
+    <span class="k">"default"</span>: <span class="g">false</span>,
+    <span class="k">"tenants"</span>: { <span class="s">"acme"</span>: <span class="g">true</span> }
+  },
+  <span class="s">"gift_cards"</span>: { <span class="k">"default"</span>: <span class="g">true</span> }
+}</pre>
+                  </div>
+                  <div>
+                    <div class="d-pane">
+                      <div class="d-pane-head"><span class="fdot"></span>tenant preview</div>
+                      <div class="fl hot">booking_v2 · acme<span class="tg on" aria-hidden="true"></span></div>
+                      <div class="fl">booking_v2 · default<span class="tg" aria-hidden="true"></span></div>
+                      <div class="fl">gift_cards · all<span class="tg on" aria-hidden="true"></span></div>
+                    </div>
+                    <p class="d-cap" style="margin-top:18px">A flag is <b>JSON your app already reads</b>. Flip it per tenant and walk the flow on a live route.</p>
+                  </div>
+                </div>
+              </div>
+
+              <div class="detail" data-for="eng" style="--lc:var(--eng)">
+                <div class="d-head"><span class="dot"></span>Detail 03 · src/booking/BookingPay.tsx · scale 1:1</div>
+                <div class="d-grid">
+                  <div class="d-pane">
+                    <div class="d-pane-head"><span class="fdot"></span>BookingPay.tsx · L41</div>
+                    <pre class="codepre"><span class="k">export function</span> BookingPay({ slot }: Props) {
+  <span class="k">const</span> flags = useFlags();
+  <span class="k">return</span> flags.booking_v2
+    ? &lt;PayExpress slot={slot} /&gt;
+    : &lt;PayClassic slot={slot} /&gt;;
+}</pre>
+                  </div>
+                  <p class="d-cap">The code is the structure every other sheet is <b>derived</b> from. Zoom lands you on the file and the line — not a picture of them.</p>
+                </div>
+              </div>
+
+              <div class="detail" data-for="content" style="--lc:var(--content)">
+                <div class="d-head"><span class="dot"></span>Detail 04 · locales/*.json · booking.pay.cta · scale 1:1</div>
+                <div class="d-grid">
+                  <div class="d-pane">
+                    <div class="d-pane-head"><span class="fdot"></span>booking.pay.cta · 3 locales</div>
+                    <div class="str hot"><b>EN</b><span>Confirm booking</span></div>
+                    <div class="str"><b>DE</b><span>Buchung bestätigen</span></div>
+                    <div class="str"><b>JA</b><span>予約を確定する</span></div>
+                  </div>
+                  <p class="d-cap">A headline is a <b>key in a locale file</b>. Edit it in place, in every language at once — the diff is a locale-file diff.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ===== title block ===== -->
+          <div class="titleblock" aria-label="Sheet title block">
+            <div class="tb-cell"><span class="l">Project</span><span class="v">acme / meridian</span></div>
+            <div class="tb-cell"><span class="l">View</span><span class="v" id="tbView">Elevation — design</span></div>
+            <div class="tb-cell"><span class="l">Sheet</span><span class="v" id="tbSheet">A-201</span></div>
+            <div class="tb-cell"><span class="l">Scale</span><span class="v" id="tbScale">1:100</span></div>
+            <div class="tb-cell"><span class="l">Status</span><span class="v"><span class="stamp">DERIVED</span> from main · not drawn</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= LOGO STRIP ================= -->
+<div class="strip reveal">
+  <p class="strip-label">Teams reading from one set</p>
+  <div class="strip-logos" aria-label="Customer logos">
+    <span>Tallgrass</span>
+    <span class="sl-serif">Hemlock&nbsp;&amp;&nbsp;Co</span>
+    <span class="sl-mono">beacon_freight</span>
+    <span class="sl-wide">Standard&nbsp;Atlas</span>
+    <span>Lantern</span>
+    <span class="sl-serif">Ferry&nbsp;St.</span>
+  </div>
+</div>
+
+<!-- ================= VIEWS ================= -->
+<section id="views">
+  <div class="wrap">
+    <p class="eyebrow reveal">A-100 · How to read the set</p>
+    <h2 class="sec reveal d1">Plan, elevation, section — for software.</h2>
+    <p class="sec-sub reveal d2">A building gets one drawing per trade: each view undistorted, none complete alone. Your product works the same way. <b>No single view shows the whole product — the views together are the product.</b></p>
+    <div class="views-grid reveal">
+      <div class="view-card" style="--lc:var(--product)">
+        <div class="vc-no"><span>P-101 · PLAN</span><span class="for">PRODUCT</span></div>
+        <h3>Plan</h3>
+        <p class="verb">Walk the flows.</p>
+        <p>Flip a feature flag per tenant, swap the dataset, preview a funnel end to end on a live route. A flag is JSON your app already reads — editing it here edits it there.</p>
+      </div>
+      <div class="view-card" style="--lc:var(--design)">
+        <div class="vc-no"><span>A-201 · ELEVATION</span><span class="for">DESIGN</span></div>
+        <h3>Elevation</h3>
+        <p class="verb">Read the surface.</p>
+        <p>Edit theme tokens and component variants on the real rendered app. A color is a line in <code>tokens.css</code>; radius, type and spacing are custom properties, not annotations.</p>
+      </div>
+      <div class="view-card" style="--lc:var(--eng)">
+        <div class="vc-no"><span>S-301 · SECTION</span><span class="for">ENGINEERING</span></div>
+        <h3>Section</h3>
+        <p class="verb">Cut through the structure.</p>
+        <p>The code, the diffs, and the adapter config that defines what every other sheet exposes. When a change is flagged load-bearing, the section is where you land.</p>
+      </div>
+      <div class="view-card" style="--lc:var(--content)">
+        <div class="vc-no"><span>C-401 · SCHEDULE</span><span class="for">CONTENT</span></div>
+        <h3>Schedule</h3>
+        <p class="verb">Read every word in place.</p>
+        <p>Every string, tabulated in context, in every locale at once. A headline is a key in <code>locales/de.json</code> — edit it and the diff is a locale-file diff.</p>
+      </div>
+    </div>
+    <p class="views-foot reveal d1">Lenses filter attention, not access. Every sheet is the same codebase — nothing is split, gated, or copied.</p>
+  </div>
+</section>
+
+<!-- ================= CHANGE FEED / CLASH ================= -->
+<section class="sec-feed" id="clash">
+  <div class="wrap">
+    <p class="eyebrow reveal">QC-300 · Clash detection</p>
+    <h2 class="sec reveal d1">designbook runs clash detection on every PR.</h2>
+    <p class="sec-sub reveal d2">One change, read through four lenses. Skim the sheets that don't concern you; when a change crosses into your layer, it's flagged <b>before review — not after release</b>.</p>
+
+    <div class="feed-ctx reveal">
+      <span class="br">meridian/checkout-v2</span>
+      <span class="sep">|</span>
+      <span>"Tighten the booking flow"</span>
+      <span class="sep">|</span>
+      <span>14 files</span>
+      <span class="who"><i aria-hidden="true"></i>Maya + agent</span>
+    </div>
+
+    <div class="feed-grid">
+      <article class="fc reveal" style="--lc:var(--design)">
+        <div class="fc-top"><span class="fc-lens">A · DESIGN</span><span class="fc-status">SKIM</span></div>
+        <h3>Two tokens touched.</h3>
+        <p><code>--radius-card</code> 8→14px, <code>--color-accent</code> deepened one step. Nothing else enters your layer.</p>
+        <button class="fc-zoom" type="button" aria-expanded="false">Zoom to 1:1</button>
+        <div class="fc-detail">
+          <pre><span class="file">src/theme/tokens.css</span>
+<span class="del">-  --radius-card: 8px;</span>
+<span class="add">+  --radius-card: 14px;</span>
+<span class="del">-  --color-accent: #3557E8;</span>
+<span class="add">+  --color-accent: #2743C9;</span></pre>
+        </div>
+      </article>
+
+      <article class="fc clash reveal d1" style="--lc:var(--content)">
+        <span class="fc-stamp" aria-hidden="true">CLASH</span>
+        <div class="fc-top"><span class="fc-lens">C · CONTENT</span><span class="fc-status">LOAD-BEARING</span></div>
+        <h3>The German CTA no longer fits.</h3>
+        <p>The pay button narrowed with the new layout. <code>booking.pay.cta</code> clears it in English and Japanese — German clips.</p>
+        <button class="fc-zoom" type="button" aria-expanded="false">Zoom to 1:1</button>
+        <div class="fc-detail">
+          <pre><span class="file">locales/de.json · booking.pay.cta</span>
+"Jetzt kostenpflichtig buchen"
+rendered: 212px · button after change: 184px  <span class="warn">→ CLIPPED</span>
+en 128px ✓ · ja 96px ✓
+<span class="add">suggested: "Kostenpflichtig buchen" · 164px ✓</span></pre>
+        </div>
+      </article>
+
+      <article class="fc reveal d1" style="--lc:var(--product)">
+        <div class="fc-top"><span class="fc-lens">P · PRODUCT</span><span class="fc-status">SKIM</span></div>
+        <h3>booking_v2 defaults on.</h3>
+        <p>The flag flips for everyone except one legacy tenant. Funnel order unchanged — the branch preview URL walks the new flow.</p>
+        <button class="fc-zoom" type="button" aria-expanded="false">Zoom to 1:1</button>
+        <div class="fc-detail">
+          <pre><span class="file">flags/meridian.json</span>
+<span class="del">-  "booking_v2": { "default": false, "tenants": { "acme": true } }</span>
+<span class="add">+  "booking_v2": { "default": true,  "tenants": { "legacy-co": false } }</span>
+preview: meridian--checkout-v2.designbook.app</pre>
+        </div>
+      </article>
+
+      <article class="fc reveal d2" style="--lc:var(--eng)">
+        <div class="fc-top"><span class="fc-lens">S · ENGINEERING</span><span class="fc-status">FULL SECTION</span></div>
+        <h3>14 files, all inside declared surfaces.</h3>
+        <p>Nine in <code>src/booking/*</code>, one token file, three locales, one flag file. Nothing load-bearing outside the change's own scope.</p>
+        <button class="fc-zoom" type="button" aria-expanded="false">Zoom to 1:1</button>
+        <div class="fc-detail">
+          <pre><span class="file">meridian/checkout-v2 · +412 −388</span>
+src/booking/*            9 files
+src/theme/tokens.css     1 file
+locales/{en,de,ja}.json  3 files
+flags/meridian.json      1 file
+<span class="add">0 files outside declared surfaces ✓</span></pre>
+        </div>
+      </article>
+    </div>
+
+    <p class="feed-note reveal">The flooring principle: when the flooring changes, the electrician skims — <b>unless there are outlets in the floor</b>. designbook finds the outlets.</p>
+  </div>
+</section>
+
+<!-- ================= AGENTS ================= -->
+<section class="sec-agents" id="agents">
+  <div class="gridlay" aria-hidden="true"></div>
+  <div class="wrap">
+    <p class="eyebrow reveal">S-400 · Supervision</p>
+    <h2 class="sec reveal d1">Agents work at 1:1. You supervise at 1:100.</h2>
+    <p class="sec-sub reveal d2">Coding agents make sweeping changes to the inner workings — that's the point of them. designbook gives you the structural view: read what an agent did at the level where <b>humans reason</b>, and zoom to the internals only where it matters.</p>
+    <div class="agents-grid">
+      <div class="ag-list reveal">
+        <div class="ag-item">
+          <h4>sweeping change, structural readout</h4>
+          <p>An agent rewrites 42 files overnight. You read one derived summary: routes, surfaces, contracts — <b>what moved at the level you build at</b>.</p>
+        </div>
+        <div class="ag-item">
+          <h4>zoom is the review</h4>
+          <p>Anything flagged load-bearing opens at 1:1 — the file, the line, the diff. Everything else you skim with a clear conscience.</p>
+        </div>
+        <div class="ag-item">
+          <h4>the same lenses apply</h4>
+          <p>Content sees whether strings moved. Product sees whether flags changed. Most days the readout says the best thing it can: <b>not your layer</b>.</p>
+        </div>
+      </div>
+      <div class="sitelog reveal d1">
+        <div class="sitelog-head">
+          <span>AGENT RUN</span><span class="rb">agent/typed-client</span>
+          <span class="live"><i></i>completed 06:41</span>
+        </div>
+        <div class="sitelog-body">
+          <div class="task">"Migrate the REST data layer to the typed client."</div>
+          <div class="meta">42 files rewritten · 3h 40m unattended · every write a readable diff</div>
+          <div class="rule"></div>
+          <div class="rh">STRUCTURAL READOUT · 1:100</div>
+          <div class="slrow"><span class="ok">✓</span><span>routes unchanged — 17 of 17 render identical</span></div>
+          <div class="slrow"><span class="ok">✓</span><span>surfaces unchanged — tokens, strings, flags untouched</span></div>
+          <div class="slrow"><span class="ok">✓</span><span>fixtures &amp; datasets — bindings intact</span></div>
+          <div class="slrow"><span class="flag">⚠</span><span>1 load-bearing change — session moved to httpOnly cookie</span><a class="zoomlink" href="#top">ZOOM 1:1</a></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= SPEC / DERIVED ================= -->
+<section class="sec-spec" id="spec">
+  <div class="wrap">
+    <p class="eyebrow reveal">SPEC-001 · General notes</p>
+    <h2 class="sec reveal d1">Derived from code. Never drawn.</h2>
+    <p class="sec-sub reveal d2">The set is not a parallel artifact that drifts. It's a projection of the running app — <b>current by construction</b>, bounded by config your engineers own.</p>
+    <div class="spec-grid">
+      <div class="trust-list reveal">
+        <div class="trust-item">
+          <h4>runs inside your real app</h4>
+          <p>An npm plugin in your build: real components, real data, live routes. No storybook-of-lies to keep honest.</p>
+        </div>
+        <div class="trust-item">
+          <h4>surfaces: one config</h4>
+          <p>Adapters declare what each sheet exposes — theme tokens, locale catalogs, flag providers, datasets, variants, flows. Everything else is read-only by construction.</p>
+        </div>
+        <div class="trust-item">
+          <h4>every edit lands as code</h4>
+          <p>The embedded agent reconciles edits into the repo: a CSS custom property, a locale-file diff, a feature-flag JSON change. Reviewable, revertible, boring.</p>
+        </div>
+        <div class="trust-item">
+          <h4>every branch, a set</h4>
+          <p>Each branch renders its own drawing set at a URL. Share a reading, not a screenshot.</p>
+        </div>
+        <div class="trust-item">
+          <h4>figma is a projection</h4>
+          <p>Push any sheet to Figma as native, editable layers; pull the edits back and the agent applies them. The code stays the source.</p>
+        </div>
+      </div>
+      <div class="config-pane reveal d1">
+        <div class="config-head"><i></i><i></i><i></i>designbook.config.ts</div>
+        <pre><span class="ck">import</span> { defineBook } <span class="ck">from</span> <span class="cs">"designbook"</span>;
+
+<span class="ck">export default</span> defineBook({
+  app: <span class="cs">"src/App.tsx"</span>,          <span class="cc">// your real entry</span>
+  sheets: {
+    theme:   <span class="cs">"src/theme/tokens.css"</span>,
+    content: <span class="cs">"locales/*.json"</span>,
+    flags:   <span class="cs">"flags/meridian.json"</span>,
+    data:    <span class="cs">"fixtures/**"</span>,
+  },
+  clash: { locales: <span class="cs">"strict"</span>, contracts: <span class="cs">"flag"</span> },
+  reviewers: [<span class="cs">"@acme/platform"</span>],
+});  <span class="cc">// everything above is editable. nothing else is.</span></pre>
+      </div>
+    </div>
+    <div class="onboard reveal">
+      <div class="ob">
+        <span class="obn">01 · CONNECT</span>
+        <h4>Point it at a repo</h4>
+        <p>Authorize the GitHub app on the repos you choose. Read access to code; changes go through your normal review.</p>
+      </div>
+      <div class="ob">
+        <span class="obn">02 · DERIVE</span>
+        <h4>An agent reads the structure</h4>
+        <p>Components, tokens, locales, flags — it writes the config you'd never want to write by hand.</p>
+      </div>
+      <div class="ob">
+        <span class="obn">03 · READ</span>
+        <h4>Your set renders at a URL</h4>
+        <p>Every screen, every lens, every zoom level — live in minutes. Open your sheet and start editing.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= QUOTE ================= -->
+<section class="sec-quote">
+  <div class="wrap reveal">
+    <blockquote class="bigquote">"Our agents rewired the whole data layer in a weekend. I watched it at <span class="m">1:100</span> — and zoomed in exactly twice."</blockquote>
+    <div class="quote-att">
+      <span class="qa" aria-hidden="true"></span>
+      <span><span class="qn">Elena Ruiz</span><br><span class="qr">VP Engineering, Tallgrass</span></span>
+    </div>
+  </div>
+</section>
+
+<!-- ================= PRICING ================= -->
+<section class="sec-pricing" id="pricing">
+  <div class="wrap">
+    <p class="eyebrow reveal">SR-001 · Schedule of rates</p>
+    <h2 class="sec reveal d1">Start free. Pay when the whole team reads the set.</h2>
+    <div class="price-grid reveal">
+      <div class="plan">
+        <h3>Free</h3>
+        <div class="plan-price">$0</div>
+        <div class="plan-note"></div>
+        <ul>
+          <li>Hosted starter set</li>
+          <li>Full local tool, open source</li>
+          <li>Daily agent credits</li>
+          <li>1 connected repo</li>
+        </ul>
+        <a class="btn btn-ghost" href="#">Start free</a>
+      </div>
+      <div class="plan">
+        <h3>Pro</h3>
+        <div class="plan-price">$25<small> /editor/mo</small></div>
+        <div class="plan-note">includes $15 in agent credits</div>
+        <ul>
+          <li>Unlimited hosted sets</li>
+          <li>All four lenses + zoom</li>
+          <li>Figma round-trip</li>
+          <li>Agent changes on your repos</li>
+        </ul>
+        <a class="btn btn-ghost" href="#">Get Pro</a>
+      </div>
+      <div class="plan hot">
+        <span class="plan-flag">For whole teams</span>
+        <h3>Team</h3>
+        <div class="plan-price">$40<small> /editor/mo</small></div>
+        <div class="plan-note">pooled credits across the team</div>
+        <ul>
+          <li>Branch sets &amp; preview URLs</li>
+          <li>Clash detection on every change</li>
+          <li>Comments &amp; review flows</li>
+          <li>Roles &amp; approvals</li>
+        </ul>
+        <a class="btn btn-primary" href="#">Start a team</a>
+      </div>
+      <div class="plan">
+        <h3>Enterprise</h3>
+        <div class="plan-price">Custom</div>
+        <div class="plan-note"></div>
+        <ul>
+          <li>SSO &amp; SCIM</li>
+          <li>Self-hosted option</li>
+          <li>Governance &amp; audit export</li>
+          <li>Dedicated support</li>
+        </ul>
+        <a class="btn btn-ghost" href="#">Talk to us</a>
+      </div>
+    </div>
+    <p class="credits-note reveal">Agent work runs on credits. <b>Credit packs are available on every plan</b> — including Free.</p>
+    <p class="pricing-foot reveal">ILLUSTRATIVE LAUNCH PRICING</p>
+  </div>
+</section>
+
+<!-- ================= FOOTER CTA ================= -->
+<section class="sec-cta">
+  <div class="gridlay" aria-hidden="true"></div>
+  <div class="wrap">
+    <h2 class="reveal">Your codebase already contains every view.</h2>
+    <p class="cta-sub reveal d1">Connect the repo. Read the set.</p>
+    <div class="cta-ctas reveal d2">
+      <a class="btn btn-invert btn-lg" href="#">Connect your GitHub repo</a>
+      <a class="btn btn-outline btn-lg" href="#"><span style="font-family:var(--mono);font-size:14px">$ npm i designbook</span></a>
+    </div>
+  </div>
+</section>
+
+<!-- ================= FOOTER ================= -->
+<footer>
+  <div class="wrap">
+    <div class="foot-grid">
+      <div class="foot-brand">
+        <a class="logo" href="#" aria-label="designbook home">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <rect x="7.5" y="1.5" width="15" height="15" stroke="#3557E8" stroke-width="1.5"/>
+            <rect x="4.5" y="4.5" width="15" height="15" fill="#0F1D33" stroke="#B85C00" stroke-width="1.5"/>
+            <rect x="1.5" y="7.5" width="15" height="15" fill="#0F1D33" stroke="#fff" stroke-width="1.5"/>
+            <path d="M1.5 22.5 L16.5 7.5" stroke="#fff" stroke-width="1.5"/>
+          </svg>
+          designbook
+        </a>
+        <p>The product development tool for the whole team. One structure, every angle.</p>
+      </div>
+      <div class="foot-col">
+        <h5>Product</h5>
+        <a href="#views">The drawing set</a>
+        <a href="#clash">Clash detection</a>
+        <a href="#agents">Agent supervision</a>
+        <a href="#spec">Figma round-trip</a>
+        <a href="#pricing">Pricing</a>
+      </div>
+      <div class="foot-col">
+        <h5>Developers</h5>
+        <a href="#">Docs</a>
+        <a href="#">Adapters</a>
+        <a href="#">designbook CLI</a>
+        <a href="#">GitHub</a>
+        <a href="#">Status</a>
+      </div>
+      <div class="foot-col">
+        <h5>Company</h5>
+        <a href="#">Blog</a>
+        <a href="#">Careers</a>
+        <a href="#">Press kit</a>
+        <a href="#">Contact</a>
+      </div>
+      <div class="foot-col">
+        <h5>Legal</h5>
+        <a href="#">Privacy</a>
+        <a href="#">Terms</a>
+        <a href="#">Security</a>
+        <a href="#">DPA</a>
+      </div>
+    </div>
+    <div class="foot-base">
+      <span>© 2026 designbook</span>
+      <span class="rule-line" aria-hidden="true"></span>
+      <span class="concept-note">SHEET Z-999 · CONCEPT SITE · PRICING ILLUSTRATIVE · designbook IS A WORKING NAME</span>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function(){
+  "use strict";
+  var reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  /* ---- nav ---- */
+  var nav = document.getElementById("nav");
+  function navState(){ nav.classList.toggle("scrolled", window.scrollY > 8); }
+  var ticking = false;
+  window.addEventListener("scroll", function(){
+    if(ticking) return;
+    ticking = true;
+    requestAnimationFrame(function(){ ticking = false; navState(); });
+  }, { passive:true });
+
+  /* ---- npm pill copy ---- */
+  document.querySelectorAll(".npm-pill").forEach(function(pill){
+    pill.addEventListener("click", function(){
+      try { navigator.clipboard.writeText("npm i designbook"); } catch(e){}
+      pill.classList.add("did");
+      setTimeout(function(){ pill.classList.remove("did"); }, 1600);
+    });
+  });
+
+  /* ---- reveal on scroll ---- */
+  var io = new IntersectionObserver(function(entries){
+    entries.forEach(function(e){
+      if(e.isIntersecting){ e.target.classList.add("in"); io.unobserve(e.target); }
+    });
+  }, { rootMargin: "0px 0px -10% 0px", threshold: 0.05 });
+  document.querySelectorAll(".reveal").forEach(function(el){ io.observe(el); });
+
+  /* ---- the drawing set: lens + zoom ---- */
+  var sheet = document.getElementById("sheet");
+  var tbView = document.getElementById("tbView");
+  var tbSheet = document.getElementById("tbSheet");
+  var tbScale = document.getElementById("tbScale");
+  var LENS = {
+    design:  { sheet:"A-201", view:"Elevation — design" },
+    product: { sheet:"P-101", view:"Plan — product" },
+    eng:     { sheet:"S-301", view:"Section — engineering" },
+    content: { sheet:"C-401", view:"Schedule — content" }
+  };
+  var lensBtns = document.querySelectorAll("[data-lens-btn]");
+  var zoomBtns = document.querySelectorAll("[data-zoom-btn]");
+
+  function setLens(name){
+    sheet.setAttribute("data-lens", name);
+    lensBtns.forEach(function(b){
+      b.setAttribute("aria-pressed", String(b.getAttribute("data-lens-btn") === name));
+    });
+    tbView.textContent = LENS[name].view;
+    tbSheet.textContent = LENS[name].sheet;
+  }
+  function setZoom(z){
+    sheet.setAttribute("data-zoom", z);
+    zoomBtns.forEach(function(b){
+      b.setAttribute("aria-pressed", String(b.getAttribute("data-zoom-btn") === z));
+    });
+    tbScale.textContent = z === "detail" ? "1:1" : "1:100";
+  }
+  lensBtns.forEach(function(b){
+    b.addEventListener("click", function(){ stopCycle(); setLens(b.getAttribute("data-lens-btn")); });
+  });
+  zoomBtns.forEach(function(b){
+    b.addEventListener("click", function(){ stopCycle(); setZoom(b.getAttribute("data-zoom-btn")); });
+  });
+
+  /* gentle auto-cycle of lenses until first interaction (skipped for reduced motion) */
+  var cycleTimer = null;
+  var order = ["design","product","eng","content"];
+  var ci = 0;
+  function stopCycle(){ if(cycleTimer){ clearInterval(cycleTimer); cycleTimer = null; } }
+  if(!reduceMotion){
+    cycleTimer = setInterval(function(){
+      if(sheet.getAttribute("data-zoom") !== "overview") return;
+      ci = (ci + 1) % order.length;
+      setLens(order[ci]);
+    }, 4200);
+    sheet.addEventListener("pointerdown", stopCycle, { once:true });
+  }
+
+  /* ---- fit sheet to container ---- */
+  var NATURAL = 980;
+  var fitEl = document.getElementById("sheetFit");
+  function fitSheet(){
+    var s = Math.min(1, fitEl.clientWidth / NATURAL);
+    sheet.style.transform = "scale(" + s + ")";
+    fitEl.style.height = (sheet.offsetHeight * s) + "px";
+  }
+
+  /* ---- change feed: zoom cards ---- */
+  document.querySelectorAll(".fc-zoom").forEach(function(btn){
+    btn.addEventListener("click", function(){
+      var card = btn.closest(".fc");
+      var open = card.classList.toggle("open");
+      btn.setAttribute("aria-expanded", String(open));
+      btn.firstChild.nodeValue = open ? "Back to 1:100" : "Zoom to 1:1";
+    });
+  });
+
+  /* ---- init ---- */
+  window.addEventListener("resize", fitSheet);
+  window.addEventListener("load", fitSheet);
+  fitSheet();
+  setTimeout(fitSheet, 60);
+  navState();
+  setLens("design");
+  setZoom("overview");
+})();
+</script>
+</body>
+</html>

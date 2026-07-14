@@ -203,6 +203,83 @@ type PluginTabSpec = {
   Screen: ComponentType<PluginScreenProps>;
 };
 
+// ---------------------------------------------------------------------------
+// Props-panel sections (docs/specs/props-panel.md §Plugin sections)
+// ---------------------------------------------------------------------------
+
+/** One declared prop as the props panel resolved it, handed to a section so a
+ * plugin can read the selection's typed surface without touching a fiber. */
+type PropsPanelPropInfo = {
+  name: string;
+  /** Control kind: string | number | boolean | enum | node | function |
+   * object. */
+  kind: string;
+  typeText?: string;
+  required?: boolean;
+  /** The instance's current runtime value (JSON-safe; absent when unpassed). */
+  value?: unknown;
+};
+
+/**
+ * The resolved selection context a props-panel section renders against — the
+ * SAME file/export/schema/values the core prop controls use, decoupled from
+ * UI internals so a third-party plugin can type against it.
+ */
+type PropsPanelSectionContext = {
+  /** The selected component's own source file (repo-relative), when resolved. */
+  file?: string;
+  /** The selected component's export name. */
+  exportName?: string;
+  /** Human display name for the selection (e.g. "ProductCard"). */
+  componentName?: string;
+  /** The typed prop surface + current values (empty before the schema lands). */
+  props: PropsPanelPropInfo[];
+  /** Resolve an `/api/*` path against the designbook server origin. */
+  apiUrl: (path: string) => string;
+  /**
+   * Draft a prompt into the active conversation's chat composer, when the host
+   * exposes one. The Figma pull handoff uses this: it drafts the read-back
+   * prompt and the user's send click is the confirm gate. Absent when no chat
+   * host is mounted.
+   */
+  openChat?: (draft: string) => void;
+  /**
+   * Live, transient handles for the current selection — present only while a
+   * live fiber is selected (absent after a reload / restore replay). A section
+   * that serializes the selection's DOM (Figma push) reads these. Typed
+   * `unknown` so this seam stays free of DOM/React libs, mirroring
+   * `serializeEntry`'s `rootEl`.
+   */
+  live?: {
+    /** The selected component's registry id (its component *type*). */
+    entryId: string;
+    /** The selection's live DOM anchor — an `Element` in the preview frame. */
+    root?: unknown;
+    /** The selected component's live React fiber. */
+    fiber?: unknown;
+  };
+};
+
+type PropsPanelSectionProps = {
+  context: PropsPanelSectionContext;
+};
+
+/**
+ * A section a plugin APPENDS to the end of the props panel (below the core
+ * controls). Registered from the plugin's ui half exactly like its tab /
+ * selection-context contributions; rendered collapsible, in `order` then `id`
+ * order. Example use: a "Push to Figma" section for the selected component.
+ */
+type PropsPanelSectionSpec = {
+  /** Stable id (deduped; a re-register with the same id replaces). */
+  id: string;
+  /** Section header. */
+  title: string;
+  /** Sort weight among sections (default 0; ties break on id). */
+  order?: number;
+  Component: ComponentType<PropsPanelSectionProps>;
+};
+
 type SerializeEntryOptions = {
   componentId: string;
   componentName: string;
@@ -229,6 +306,12 @@ type PluginUiSpec = {
    * docs/specs/selection-context.md.
    */
   selectionContext?: SelectionContextContributor;
+  /**
+   * PREVIEW: sections appended to the END of the props panel for the current
+   * selection (below the core controls). Registered under the integration's
+   * name — see docs/specs/props-panel.md §Plugin sections.
+   */
+  propsSections?: PropsPanelSectionSpec[];
 };
 
 // ---------------------------------------------------------------------------
@@ -276,6 +359,10 @@ export type {
   PluginScreenProps,
   PluginTabSpec,
   PluginUiSpec,
+  PropsPanelPropInfo,
+  PropsPanelSectionContext,
+  PropsPanelSectionProps,
+  PropsPanelSectionSpec,
   SelectionContextContribution,
   SelectionContextContributor,
   SelectionContextFact,

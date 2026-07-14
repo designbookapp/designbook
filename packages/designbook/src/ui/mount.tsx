@@ -33,7 +33,10 @@ import { StrictMode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import type { DesignbookConfig } from "@designbookapp/designbook/config";
 import { initConfigStore } from "./designbook";
-import { requestNavigate, requestNavigateApp } from "./navigationBus";
+import {
+  requestNavigateApp,
+  requestNavigateSandbox,
+} from "./navigationBus";
 import { IsolationProvider, type IsolationAnchors } from "./isolationContext";
 import "./index.css";
 
@@ -88,41 +91,21 @@ interface WorkbenchHandle {
   /** Flip expanded/collapsed (no-op when not in overlay mode). */
   toggle(): void;
   /**
-   * Navigate the workbench to a component entry (registry id, e.g.
-   * "primitives.Island"). Drives the same in-tree routing the files panel uses;
-   * used by the `/__designbook/component/<entryId>` deep link. Safe to call
-   * before the workbench React tree has finished mounting (queued).
-   */
-  navigateTo(entryId: string): void;
-  /**
-   * Navigate the workbench to the App page showing a same-origin
-   * live frame of `path`. Used by the boot module when a plain "expand" from
-   * the page-tools strip (no component entry) should land on the App page
-   * carrying the live page's `location.pathname + location.search`. Safe to
-   * call before the workbench React tree has finished mounting (queued).
+   * Point the full view's center frame at `path`. Used by the boot module on
+   * expand so the view lands on the live page's CURRENT route
+   * (`location.pathname + location.search`). Safe to call before the
+   * workbench React tree has finished mounting (queued).
    */
   navigateToApp(path: string): void;
   /**
-   * Enter PAGE MODE (M spec, M1): mount the page-tools layer (strip + live-page
-   * select + chip + Pi drawer) into its own shadow host WITHOUT expanding the
-   * canvas overlay. Reuses this mount's single config store, so the canvas
-   * `expand()` still works alongside. No-op when styles/overlay aren't available
-   * (host mode never calls this). Idempotent.
+   * Open the full view's fullscreen sandbox canvas focused on a pin
+   * (docs/specs/sandbox.md). Safe to call before the tree mounts (queued).
    */
-  openPageTools(callbacks: PageToolsCallbacks): void;
-  /** Tear down the page-tools layer (leaves the canvas overlay untouched). */
-  closePageTools(): void;
+  navigateToSandbox(pinId: string): void;
   /** Whether this mount is an overlay. */
   readonly isOverlay: boolean;
   /** The outermost host element created for this mount. */
   readonly host: HTMLElement | Element;
-}
-
-interface PageToolsCallbacks {
-  /** Open the full canvas, navigating to a component entry first when given. */
-  onExpandCanvas: (entryId?: string) => void;
-  /** Restore the pill (page tools fully dismissed). */
-  onClose: () => void;
 }
 
 const OVERLAY_Z = 2147483000;
@@ -260,67 +243,9 @@ function mountWorkbench(options: MountWorkbenchOptions): WorkbenchHandle {
     if (overlayHost) overlayHost.style.display = visible ? "block" : "none";
   }
 
-  // ---- Page-tools layer: own shadow host, independent of overlay -----
-  // Lives above the canvas overlay tier so it stays usable while the overlay is
-  // collapsed. Its host is `pointer-events: none`; only its chrome (and the
-  // armed select capture layer) opt back in, so the app stays interactive.
-  let pageToolsHost: HTMLDivElement | null = null;
-  let pageToolsRoot: Root | null = null;
-
-  function openPageTools(callbacks: PageToolsCallbacks): void {
-    if (pageToolsHost || disposed) return; // idempotent / post-unmount guard
-    const ptHost = document.createElement("div");
-    ptHost.dataset.designbookPageTools = "";
-    ptHost.style.cssText = `position:fixed;inset:0;z-index:${OVERLAY_Z + 1};pointer-events:none;`;
-    document.body.appendChild(ptHost);
-    pageToolsHost = ptHost;
-
-    const shadow = ptHost.attachShadow({ mode: "open" });
-    if (styles) {
-      shadow.adoptedStyleSheets = [
-        ...shadow.adoptedStyleSheets,
-        toStyleSheet(styles),
-      ];
-    }
-    const mountEl = document.createElement("div");
-    mountEl.style.cssText = "pointer-events:none;";
-    shadow.appendChild(mountEl);
-    const portalContainer = document.createElement("div");
-    portalContainer.dataset.designbookPortalLayer = "";
-    shadow.appendChild(portalContainer);
-    const ptAnchors: IsolationAnchors = { portalContainer, lightHost: null };
-
-    const ptRoot = createRoot(mountEl);
-    pageToolsRoot = ptRoot;
-
-    void import("./screens/pageTools/PageTools").then(({ PageTools }) => {
-      if (pageToolsRoot !== ptRoot) return; // closed before load resolved
-      ptRoot.render(
-        <StrictMode>
-          <IsolationProvider anchors={ptAnchors}>
-            <PageTools
-              hostEl={ptHost}
-              onExpandCanvas={callbacks.onExpandCanvas}
-              onClose={callbacks.onClose}
-            />
-          </IsolationProvider>
-        </StrictMode>,
-      );
-    });
-  }
-
-  function closePageTools(): void {
-    pageToolsRoot?.unmount();
-    pageToolsRoot = null;
-    pageToolsHost?.remove();
-    pageToolsHost = null;
-  }
-
   return {
     isOverlay: overlay,
     host,
-    openPageTools,
-    closePageTools,
     expand() {
       setOverlayVisible(true);
     },
@@ -330,15 +255,14 @@ function mountWorkbench(options: MountWorkbenchOptions): WorkbenchHandle {
     toggle() {
       if (overlayHost) setOverlayVisible(overlayHost.style.display === "none");
     },
-    navigateTo(entryId: string) {
-      requestNavigate(entryId);
-    },
     navigateToApp(path: string) {
       requestNavigateApp(path);
     },
+    navigateToSandbox(pinId: string) {
+      requestNavigateSandbox(pinId);
+    },
     unmount() {
       disposed = true;
-      closePageTools();
       root?.unmount();
       root = null;
       overlayHost?.remove();
@@ -347,9 +271,4 @@ function mountWorkbench(options: MountWorkbenchOptions): WorkbenchHandle {
 }
 
 export { mountWorkbench };
-export type {
-  MountWorkbenchOptions,
-  PageToolsCallbacks,
-  WorkbenchHandle,
-  IsolationMode,
-};
+export type { MountWorkbenchOptions, WorkbenchHandle, IsolationMode };

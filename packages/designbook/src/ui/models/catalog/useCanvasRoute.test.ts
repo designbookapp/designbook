@@ -46,6 +46,31 @@ describe("app route", () => {
   });
 });
 
+describe("sandbox route (docs/specs/sandbox.md)", () => {
+  it("round-trips the focused pin id", () => {
+    const hash = buildHash("main", [], undefined, undefined, "card-x1");
+    expect(hash).toBe("/b/main/sandbox/card-x1");
+    const route = parseHashString(`#${hash}`);
+    expect(route).toEqual({
+      branch: "main",
+      flowId: undefined,
+      nodeIds: [],
+      sandboxPinId: "card-x1",
+    });
+  });
+
+  it("sandbox wins over app/nodeIds when set; other routes carry no pin", () => {
+    expect(buildHash("main", ["x.Y"], "flow", "/checkout", "pin-1")).toBe(
+      "/b/main/sandbox/pin-1",
+    );
+    expect(
+      parseHashString("#/b/main/app/%2Ftrips").sandboxPinId,
+    ).toBeUndefined();
+    // A bare "sandbox" segment without a pin id is not a sandbox route.
+    expect(parseHashString("#/b/main/sandbox").sandboxPinId).toBeUndefined();
+  });
+});
+
 describe("reconcileRouteBranch (memory route follows the server after a proxy switch)", () => {
   const staleRoute = {
     branch: "main",

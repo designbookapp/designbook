@@ -38,6 +38,30 @@ type PageHit = {
   dom?: PageDom;
   /** Fiber-derived nearest component name for an unregistered DOM hit (a hint). */
   hint?: string;
+  // --- Sandbox capture extras (docs/specs/sandbox.md). Component hits carry
+  // their own identity; DOM hits (v2 element pins) carry their OWNER's
+  // identity here (entry = owner) with the element itself as `anchor`.
+  /** Registry entry key (the component's set key). */
+  entryKey?: string;
+  /** Export name: the entry's own for a component hit; the OWNER's for a
+   * drilled DOM hit (codeTarget.ownerExportName). */
+  exportName?: string;
+  /** Stable per-instance id (pin identity's instance path). */
+  instanceId?: string;
+  /** Live fiber — transient, never persisted (props/context capture). */
+  fiber?: unknown;
+  /** Live anchor element — transient (pin bubble rect re-resolution). */
+  anchor?: Element;
+  /**
+   * How the owner identity was derived: "entry" = a registered component
+   * (the original flow); "source" = an UNREGISTERED authoring component
+   * resolved by the fiber owner walk (sourceOwner.ts) — page shells like
+   * HomePage. Source owners have no entryId, and `sourcePath` may be ""
+   * (the pin route resolves the file from `ownerNames` node-side).
+   */
+  ownerKind?: "entry" | "source";
+  /** Named-component owner chain, nearest first (source owners only). */
+  ownerNames?: string[];
 };
 
 /** css-ish label for a plain DOM element: `tag#id` / `tag.class` / `tag`. */
@@ -85,6 +109,23 @@ function canGoToComponent(hit: PageHit): boolean {
 }
 
 /**
+ * Whether the sandbox prompt box applies to a hit (docs/specs/sandbox.md):
+ * a registered component hit (component pin), a drilled DOM element inside a
+ * registered owner (element pin), or a DOM element whose UNREGISTERED
+ * authoring component resolved via the source-owner fallback — the pin route
+ * finishes file resolution from `ownerNames` when `sourcePath` is "".
+ */
+function canPromptSandbox(hit: PageHit): boolean {
+  if (!hit.instanceId) return false;
+  if (hit.kind === "component") {
+    return Boolean(hit.entryId && hit.sourcePath);
+  }
+  if (!hit.anchor) return false;
+  if (hit.entryId && hit.sourcePath) return true; // registered-owner element
+  return hit.ownerKind === "source" && Boolean(hit.exportName);
+}
+
+/**
  * Prefill text for the Prompt Pi drawer: a compact context header the user
  * types their request under. Carries the file + usage line for a component hit
  * (like the canvas chat context), degrades to a DOM/hint description otherwise.
@@ -106,10 +147,12 @@ function buildPagePromptPrefill(hit: PageHit): string {
   return `Re: ${tag} element${inside} (not a registered component)\n\n`;
 }
 
-/** Strip tools: mutually-exclusive with each other and with the Pi drawer. */
+/** Strip tools: mutually-exclusive with EACH OTHER, but NOT with the drawer. */
 type Tool = "select" | "text" | null;
 
-/** Strip tool state: the active tool and the Pi drawer, which are exclusive-arm. */
+/** Strip tool state: the active tool + the Pi drawer. The two COEXIST — a tool
+ * can be armed while the drawer (thread or canvas) is open, so arming a tool
+ * never closes the drawer and opening the drawer never disarms a tool. */
 type ToolState = { tool: Tool; chatOpen: boolean };
 
 type ToolAction =
@@ -120,27 +163,29 @@ type ToolAction =
   | { type: "escape"; chipOpen: boolean };
 
 /**
- * Pure transitions for the strip's tool/drawer state. Arming a tool closes the
- * drawer (and any other tool) and vice-versa — one active affordance at a time;
- * Escape disarms the active tool only when no chip is open (the chip consumes
- * Escape first).
+ * Pure transitions for the strip's tool/drawer state. Tools are exclusive with
+ * EACH OTHER (arming one swaps out the other), but a tool and the Pi drawer
+ * COEXIST: arming/disarming a tool preserves `chatOpen`, and opening/closing
+ * the drawer preserves the armed `tool`. This lets the user keep the drawer
+ * (and the independent canvas panel) open while selecting/text-editing on the
+ * page. Escape disarms the active tool only when no chip is open (the chip
+ * consumes Escape first); the drawer and then the canvas panel sit at the END
+ * of the ladder (handled in the component).
  */
 function nextToolState(state: ToolState, action: ToolAction): ToolState {
   switch (action.type) {
     case "toggleSelect":
       return state.tool === "select"
-        ? { tool: null, chatOpen: state.chatOpen }
-        : { tool: "select", chatOpen: false };
+        ? { ...state, tool: null }
+        : { ...state, tool: "select" };
     case "toggleText":
       return state.tool === "text"
-        ? { tool: null, chatOpen: state.chatOpen }
-        : { tool: "text", chatOpen: false };
+        ? { ...state, tool: null }
+        : { ...state, tool: "text" };
     case "toggleChat":
-      return state.chatOpen
-        ? { ...state, chatOpen: false }
-        : { tool: null, chatOpen: true };
+      return { ...state, chatOpen: !state.chatOpen };
     case "promptPi":
-      return { tool: null, chatOpen: true };
+      return { ...state, chatOpen: true };
     case "escape":
       // The chip (when open) consumes Escape first; only a bare armed tool
       // disarms here.
@@ -154,6 +199,7 @@ function nextToolState(state: ToolState, action: ToolAction): ToolState {
 export {
   buildPagePromptPrefill,
   canGoToComponent,
+  canPromptSandbox,
   chipLabel,
   domLabel,
   nextToolState,

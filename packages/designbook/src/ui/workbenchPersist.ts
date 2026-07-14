@@ -61,6 +61,8 @@ type RouteSnapshot = {
   /** App page route — the workbench-relative path shown in the
    * frame cell, when the persisted route is the App page. */
   appPath?: string;
+  /** Sandbox canvas route — the focused pin id (docs/specs/sandbox.md). */
+  sandboxPinId?: string;
 };
 
 type PersistBlob = {
@@ -186,6 +188,8 @@ function parseRoute(value: unknown): RouteSnapshot | null {
     flowId: typeof value.flowId === "string" ? value.flowId : undefined,
     nodeIds,
     appPath: typeof value.appPath === "string" ? value.appPath : undefined,
+    sandboxPinId:
+      typeof value.sandboxPinId === "string" ? value.sandboxPinId : undefined,
   };
 }
 

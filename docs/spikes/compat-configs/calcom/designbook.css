@@ -1,0 +1,6 @@
+/* cal.com theme for the designbook canvas: their v4 Tailwind root
+   (tokens + source scan over packages/ui) without app-only extras. */
+@import "tailwindcss";
+@import "./packages/config/theme/tokens.css";
+@source "./packages/ui/**/*.{js,ts,jsx,tsx}";
+@source "./designbook.config.tsx";

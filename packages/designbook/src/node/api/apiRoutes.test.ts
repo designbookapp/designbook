@@ -15,7 +15,14 @@
  * of these routes touch getSession()).
  */
 
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
@@ -128,6 +135,44 @@ describe("discovery route (E1)", () => {
     expect(alias.status).toBe(200);
     expect(alias.headers["access-control-allow-origin"]).toBe("*");
     expect(alias.body).toBe(hello.body);
+  });
+});
+
+describe("sandbox source-owner lookup (read-only)", () => {
+  it("resolves the first owner name the export scan finds a file for", async () => {
+    const { root, configPath } = projectWithConfig(
+      "export default { sets: [] };",
+    );
+    mkdirSync(join(root, "src", "pages"), { recursive: true });
+    writeFileSync(
+      join(root, "src", "pages", "HomePage.tsx"),
+      "export function HomePage() { return null; }\n",
+    );
+    const api = createApi({ configPath, projectRoot: root, port: 8802 });
+    // `Link` (a node_modules component) scans to nothing; `HomePage` wins.
+    const result = await call(
+      api,
+      "GET",
+      "/api/sandbox/source-owner?names=Link,HomePage",
+    );
+    expect(result.status).toBe(200);
+    expect(JSON.parse(result.body)).toEqual({
+      file: "src/pages/HomePage.tsx",
+      exportName: "HomePage",
+    });
+  });
+
+  it("400s without names; 200 {} when nothing resolves", async () => {
+    const api = apiFor();
+    const missingParam = await call(api, "GET", "/api/sandbox/source-owner");
+    expect(missingParam.status).toBe(400);
+    const noMatch = await call(
+      api,
+      "GET",
+      "/api/sandbox/source-owner?names=Nowhere",
+    );
+    expect(noMatch.status).toBe(200);
+    expect(JSON.parse(noMatch.body)).toEqual({});
   });
 });
 
@@ -256,6 +301,61 @@ describe("--read-only merged block set", () => {
   });
 });
 
+describe("json write endpoint: add/mutate classification, manual origin unrestricted", () => {
+  function postJson(body: unknown): IncomingMessage {
+    const req = Readable.from([JSON.stringify(body)]) as unknown as IncomingMessage;
+    (req as { method?: string }).method = "POST";
+    (req as { headers?: unknown }).headers = { host: "localhost:8802" };
+    return req;
+  }
+  async function callJson(
+    api: ReturnType<typeof createApi>,
+    body: unknown,
+  ): Promise<MockResponse> {
+    const mock = mockResponse();
+    await api.handle(
+      postJson(body),
+      mock.response as never,
+      new URL("http://localhost:8802/api/json"),
+    );
+    return mock;
+  }
+
+  // Manual text-tool / adapter-UI writes go through this endpoint (NOT the
+  // sandbox turn path), so they stay unrestricted real-layer edits: the
+  // add-vs-mutate classification is SURFACED (returned as `mode`) but never
+  // enforced or recorded — that is the sandbox-origin path's job.
+  it("surfaces mode=add|mutate and applies both — a mutate is never a 403", async () => {
+    const { root, configPath } = projectWithConfig("export default { sets: [] };");
+    writeFileSync(
+      join(root, "data.json"),
+      `${JSON.stringify({ a: { b: "1" } }, null, 2)}\n`,
+    );
+    const api = createApi({ configPath, projectRoot: root, port: 8802 });
+
+    const mutate = await callJson(api, {
+      path: "data.json",
+      keyPath: "a.b",
+      value: "2",
+    });
+    expect(mutate.status).toBe(200);
+    expect(JSON.parse(mutate.body)).toMatchObject({ ok: true, mode: "mutate" });
+
+    const add = await callJson(api, {
+      path: "data.json",
+      keyPath: "a.c",
+      value: "3",
+      create: true,
+    });
+    expect(add.status).toBe(200);
+    expect(JSON.parse(add.body)).toMatchObject({ ok: true, mode: "add" });
+
+    expect(JSON.parse(readFileSync(join(root, "data.json"), "utf8"))).toEqual({
+      a: { b: "2", c: "3" },
+    });
+  });
+});
+
 describe("worktrees route in proxy topology (C3.2 stable-URL switch)", () => {
   function postWorktree(branch: string): IncomingMessage {
     const req = Readable.from([
@@ -320,5 +420,114 @@ describe("worktrees route in proxy topology (C3.2 stable-URL switch)", () => {
     expect(instanceNavigationUrl("localhost:8802", 5405)).toBe(
       "http://localhost:5405/",
     );
+  });
+});
+
+describe("L3 conversation endpoints (changeset layers §Sessions & conversations)", () => {
+  function post(pathname: string, body: unknown): IncomingMessage {
+    const req = Readable.from([
+      JSON.stringify(body),
+    ]) as unknown as IncomingMessage;
+    (req as { method?: string }).method = "POST";
+    (req as { headers?: unknown }).headers = { host: "localhost:8802" };
+    return req;
+  }
+  async function callPost(
+    api: ReturnType<typeof createApi>,
+    pathname: string,
+    body: unknown,
+  ): Promise<MockResponse> {
+    const mock = mockResponse();
+    await api.handle(
+      post(pathname, body),
+      mock.response as never,
+      new URL(`http://localhost:8802${pathname}`),
+    );
+    return mock;
+  }
+
+  it("active-conversation handshake validates + clears", async () => {
+    const api = apiFor();
+    const set = await callPost(api, "/api/sandbox/active-conversation", {
+      conversationId: "c-abc-123",
+    });
+    expect(set.status).toBe(200);
+    expect(JSON.parse(set.body)).toEqual({ ok: true, active: "c-abc-123" });
+    const cleared = await callPost(api, "/api/sandbox/active-conversation", {
+      conversationId: null,
+    });
+    expect(JSON.parse(cleared.body)).toEqual({ ok: true, active: null });
+    const bad = await callPost(api, "/api/sandbox/active-conversation", {
+      conversationId: "NOT VALID!",
+    });
+    expect(bad.status).toBe(400);
+  });
+
+  it("GET /api/sandbox/changesets answers (allBranches included) without layers on disk", async () => {
+    const api = apiFor();
+    const plain = await call(api, "GET", "/api/sandbox/changesets");
+    expect(plain.status).toBe(200);
+    expect(JSON.parse(plain.body)).toMatchObject({ changesets: [] });
+    const all = await call(api, "GET", "/api/sandbox/changesets?allBranches=1");
+    expect(all.status).toBe(200);
+    expect(JSON.parse(all.body)).toMatchObject({ changesets: [] });
+  });
+
+  it("i18n write with an ACTIVE conversation stages into the direct-edits layer (real file byte-clean); without one it writes real", async () => {
+    const { root, configPath } = projectWithConfig(
+      "export default { sets: [] };",
+    );
+    const localeAbs = join(root, "locales.json");
+    const original = `${JSON.stringify({ title: "Hello" }, null, 2)}\n`;
+    writeFileSync(localeAbs, original);
+    const api = createApi({ configPath, projectRoot: root, port: 8802 });
+
+    // No active conversation → the real write, exactly as before.
+    const real = await callPost(api, "/api/i18n", {
+      path: "./locales.json",
+      entries: [{ key: "title", value: "Real write" }],
+    });
+    expect(real.status).toBe(200);
+    expect(JSON.parse(real.body)).toEqual({ ok: true });
+    expect(
+      (JSON.parse(readFileSync(localeAbs, "utf8")) as { title: string }).title,
+    ).toBe("Real write");
+
+    // Active conversation WITHOUT git → the G1 clear error (changesets
+    // require a git repository), real file untouched.
+    writeFileSync(localeAbs, original);
+    await callPost(api, "/api/sandbox/active-conversation", {
+      conversationId: "c-route",
+    });
+    const nogit = await callPost(api, "/api/i18n", {
+      path: "./locales.json",
+      entries: [{ key: "title", value: "Staged write" }],
+    });
+    expect(nogit.status).toBe(400);
+    expect(JSON.parse(nogit.body).error).toContain("git repository");
+    expect(readFileSync(localeAbs, "utf8")).toBe(original);
+
+    // With git → staged as a commit on the direct trunk; the real file does
+    // not move.
+    execFileSync("git", ["init", "-q", "-b", "main", root]);
+    execFileSync("git", ["add", "-A"], { cwd: root });
+    execFileSync(
+      "git",
+      ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "init"],
+      { cwd: root },
+    );
+    const staged = await callPost(api, "/api/i18n", {
+      path: "./locales.json",
+      entries: [{ key: "title", value: "Staged write" }],
+    });
+    expect(staged.status).toBe(200);
+    expect(JSON.parse(staged.body)).toEqual({ ok: true, staged: true });
+    expect(readFileSync(localeAbs, "utf8")).toBe(original);
+    // The conversation's direct-edits layer carries the change.
+    const meta = readFileSync(
+      join(root, ".designbook/changesets/direct-c-route/meta.json"),
+      "utf8",
+    );
+    expect(meta).toContain('"conversationId": "c-route"');
   });
 });

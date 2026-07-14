@@ -1,0 +1,29 @@
+{
+  "id": "05-nav-stories-link",
+  "description": "Multi-file feature drip: add a nav link, add locale keys, then reorder. Final turn asks for the current nav order (state established incrementally across turns).",
+  "turns": [
+    {
+      "user": "Selected canvas node context:\n- Label: App header\n- Source path: src/components/AppHeader.tsx\n\nUser request:\nAdd a new nav link \"Stories\" pointing at /stories, after the About link. Use t(\"nav.stories\") like the others."
+    },
+    {
+      "user": "Add the matching nav.stories key (value \"Stories\") to all three locale app.json files (en-US, es-419 with \"Historias\", fr-FR with \"Récits\")."
+    },
+    {
+      "user": "Selected canvas node context:\n- Label: App header\n- Source path: src/components/AppHeader.tsx\n\nUser request:\nActually reorder: Stories should sit between Trips and About."
+    },
+    {
+      "user": "Without re-reading the file, list the final nav link order left to right, comma-separated.",
+      "note": "state-retention probe"
+    }
+  ],
+  "checks": [
+    { "type": "file_contains", "file": "src/components/AppHeader.tsx", "pattern": "nav\\.trips[\\s\\S]{0,400}nav\\.stories[\\s\\S]{0,400}nav\\.about" },
+    { "type": "file_contains", "file": "src/components/AppHeader.tsx", "pattern": "to=\"/stories\"" },
+    { "type": "file_contains", "file": "locales/en-US/app.json", "pattern": "\"stories\"\\s*:\\s*\"Stories\"" },
+    { "type": "file_contains", "file": "locales/es-419/app.json", "pattern": "Historias" },
+    { "type": "file_contains", "file": "locales/fr-FR/app.json", "pattern": "Récits" },
+    { "type": "final_response_matches", "turn": 3, "pattern": "Home[,\\s]+Trips[,\\s]+Stories[,\\s]+About", "flags": "i" },
+    { "type": "max_reads", "file": "AppHeader.tsx", "max": 2 }
+  ],
+  "judgeRubric": "Nav order evolved: Home,Trips,About → +Stories after About (turn 1) → Stories moved between Trips and About (turn 3). Turn 4 must state Home, Trips, Stories, About without re-reading. Flag redid_work for unnecessary re-reads/re-edits; flag contradicted_earlier_decision if the final order or locale values contradict earlier turns."
+}

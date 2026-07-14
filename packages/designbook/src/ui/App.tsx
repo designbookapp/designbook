@@ -1,21 +1,22 @@
-import { Workbench } from "@designbook-ui/screens";
+import { useEffect } from "react";
+import { FullView } from "@designbook-ui/screens";
 
-const skipToContentLabel = "Skip to content";
+/** Retired prototype route — redirect to the default (the full view IS the
+ * app now), so old `#/proto/full-view` links/muscle memory don't strand a
+ * stale hash in the URL. */
+const LEGACY_PROTO_HASH = "#/proto/full-view";
 
 function App() {
-  return (
-    <>
-      <a
-        href="#main-content"
-        className="sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-50 focus:rounded-md focus:bg-primary focus:px-4 focus:py-2 focus:text-primary-foreground focus:shadow-lg"
-      >
-        {skipToContentLabel}
-      </a>
-      <div id="main-content">
-        <Workbench />
-      </div>
-    </>
-  );
+  useEffect(() => {
+    if (window.location.hash === LEGACY_PROTO_HASH) {
+      window.history.replaceState(
+        null,
+        "",
+        window.location.pathname + window.location.search,
+      );
+    }
+  }, []);
+  return <FullView />;
 }
 
 export { App };

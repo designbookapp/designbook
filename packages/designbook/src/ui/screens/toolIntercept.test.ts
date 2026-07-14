@@ -104,9 +104,4 @@ describe("source guard: capture-phase interception stays wired", () => {
     expect(source).not.toMatch(/onContextMenu=\{handleContextMenu\}/);
   });
 
-  it("PageTools drives page-mode selection through the interceptor", () => {
-    const source = read(join(screensDir, "pageTools", "PageTools.tsx"));
-    expect(source).toContain("installToolIntercept(layer, {");
-    expect(source).not.toMatch(/onClick=\{(armed \? )?handleClick/);
-  });
 });

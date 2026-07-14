@@ -1,0 +1,3 @@
+# Run artifacts (raw request payloads are large) — commit only harness/tasks/report.
+runs/
+node_modules/

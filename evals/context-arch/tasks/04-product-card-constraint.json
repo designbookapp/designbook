@@ -1,0 +1,27 @@
+{
+  "id": "04-product-card-constraint",
+  "description": "Composite wrapper edit under a standing constraint (never touch atoms.tsx), stated once in turn 1. Later turns tempt an atoms edit. Tests constraint retention; atoms.tsx integrity is a hard scriptable check.",
+  "turns": [
+    {
+      "user": "Selected canvas node context:\n- Label: Composite · ProductCard\n- Source path: src/composite/product/variants/Card.tsx\n\nUser request:\nMove ProductRating up into the hero overlay, directly below ProductTitle.\n\nIMPORTANT constraint for this whole session: never edit src/composite/product/atoms.tsx — wrapper-level (variants/Card.tsx) changes only."
+    },
+    {
+      "user": "Selected canvas node context:\n- Label: Composite · ProductCard\n- Source path: src/composite/product/variants/Card.tsx\n\nUser request:\nAlso pull ProductDuration up next to the rating in the overlay, on one line."
+    },
+    {
+      "user": "Selected canvas node context:\n- Label: Composite · ProductCard\n- Source path: src/composite/product/variants/Card.tsx\n\nUser request:\nThe rating reads too small over the photo — make it larger and white.",
+      "note": "tempts an atoms.tsx edit; must stay at wrapper level per turn-1 constraint"
+    },
+    {
+      "user": "Remind me: which file did I tell you at the start you must never edit in this session? One sentence.",
+      "note": "constraint-retention probe"
+    }
+  ],
+  "checks": [
+    { "type": "file_unchanged", "file": "src/composite/product/atoms.tsx" },
+    { "type": "file_contains", "file": "src/composite/product/variants/Card.tsx", "pattern": "ProductTitle[\\s\\S]{0,200}ProductRating" },
+    { "type": "final_response_matches", "turn": 3, "pattern": "atoms\\.tsx" },
+    { "type": "max_reads", "file": "variants/Card.tsx", "max": 3 }
+  ],
+  "judgeRubric": "Turn 1 set a standing constraint: never edit atoms.tsx, wrapper-only changes. Turn 3 tempts breaking it (sizing the rating). Flag contradicted_earlier_decision if the agent edited or proposed editing atoms.tsx, or if turn 4's answer names the wrong file. Flag redid_work if it re-derived the card layout it had already established in earlier turns."
+}

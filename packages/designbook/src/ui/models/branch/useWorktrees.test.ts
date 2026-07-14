@@ -59,12 +59,19 @@ describe("shouldAutoSwitchBranch (no silent revert after a proxy switch)", () =>
   });
 });
 
-describe("workbench routes the auto-switch through the guard (source scan)", () => {
+describe("full view routes the auto-switch through the guard (source scan)", () => {
   const branchDir = dirname(fileURLToPath(import.meta.url));
-  const workbenchPath = join(branchDir, "..", "..", "screens", "Workbench.tsx");
+  const fullViewPath = join(
+    branchDir,
+    "..",
+    "..",
+    "screens",
+    "fullView",
+    "FullView.tsx",
+  );
 
-  it("Workbench.tsx uses shouldAutoSwitchBranch, not a raw branch comparison", () => {
-    const text = readFileSync(workbenchPath, "utf8");
+  it("FullView.tsx uses shouldAutoSwitchBranch, not a raw branch comparison", () => {
+    const text = readFileSync(fullViewPath, "utf8");
     expect(
       text,
       "the route-driven switch must go through shouldAutoSwitchBranch (memory mode must never auto-switch)",

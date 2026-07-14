@@ -1,0 +1,902 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>designbook — concept wireframe</title>
+<style>
+/* ------------------------------------------------------------------
+   WIREFRAME AESTHETIC — grayscale, mono labels, dashed placeholders.
+   Deliberately lo-fi. This is a thought experiment, not a UI.
+------------------------------------------------------------------- */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+:root{
+  --ink:#141414; --mid:#666; --faint:#999; --line:#8a8a8a;
+  --bg:#f5f5f2; --paper:#fff; --fill:#ececea;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --sans: -apple-system, "Segoe UI", system-ui, sans-serif;
+}
+html,body{ background:var(--bg); color:var(--ink); font-family:var(--mono); font-size:13px; line-height:1.45; }
+button{ font:inherit; color:inherit; background:none; border:none; cursor:pointer; }
+input{ font:inherit; }
+
+/* ---------- screen-map nav rail ---------- */
+#rail{
+  position:fixed; left:0; top:0; bottom:0; width:104px; z-index:50;
+  background:var(--paper); border-right:1px solid var(--line);
+  padding:10px 8px; display:flex; flex-direction:column; gap:6px; overflow:auto;
+}
+#rail .logo{ font-size:11px; letter-spacing:.06em; padding:2px 4px 10px; border-bottom:1px dashed var(--faint); margin-bottom:4px; }
+#rail .logo b{ display:block; font-size:12px; }
+#rail .logo .tagline{ display:block; }
+.rail-item{ text-align:left; border:1px solid var(--line); background:var(--paper); padding:6px; font-size:10px; line-height:1.3; }
+.rail-item .n{ display:inline-block; width:14px; height:14px; border:1px solid var(--ink); border-radius:50%; text-align:center; line-height:13px; font-size:9px; margin-bottom:3px; }
+.rail-item span{ display:block; color:var(--mid); }
+.rail-item.active{ background:var(--ink); color:#fff; }
+.rail-item.active span{ color:#ccc; }
+.rail-item.active .n{ border-color:#fff; }
+.rail-hint{ margin-top:auto; font-size:9px; color:var(--faint); padding:4px; }
+
+main{ margin-left:104px; padding:22px 26px 80px; max-width:1060px; }
+
+/* ---------- generic wireframe atoms ---------- */
+.screen{ display:none; }
+.screen.active{ display:block; }
+.screen-head{ margin-bottom:14px; padding-bottom:10px; border-bottom:2px solid var(--ink); }
+.screen-head h1{ font-size:16px; font-weight:700; }
+.screen-head p{ font-family:var(--sans); color:var(--mid); font-size:12px; max-width:64ch; margin-top:2px; }
+.kicker{ font-size:10px; letter-spacing:.12em; color:var(--mid); text-transform:uppercase; }
+
+.box{ background:var(--paper); border:1px solid var(--line); }
+.ph{ border-style:dashed; background:transparent; color:var(--mid); }
+.dim{ opacity:.35; }
+.chip{ display:inline-block; border:1px solid var(--line); background:var(--paper); padding:1px 7px; font-size:10px; }
+.chip.on{ background:var(--ink); color:#fff; border-color:var(--ink); }
+.tag{ display:inline-block; font-size:9px; border:1px solid var(--ink); padding:0 4px; letter-spacing:.05em; }
+.tag.inv{ background:var(--ink); color:#fff; }
+.wire-btn{ border:1px solid var(--ink); background:var(--paper); padding:4px 10px; font-size:11px; }
+.wire-btn:hover{ background:var(--fill); }
+.wire-btn.primary{ background:var(--ink); color:#fff; }
+.wire-btn[disabled]{ opacity:.4; cursor:not-allowed; }
+.sk{ height:6px; background:var(--fill); margin:5px 0; }
+.sk.w60{ width:60%; } .sk.w80{ width:80%; } .sk.w40{ width:40%; }
+.small{ font-size:10px; color:var(--mid); }
+.mutefill{ background:var(--fill); }
+
+/* annotation markers + notes */
+.ann{ display:inline-block; font-style:normal; width:15px; height:15px; border-radius:50%;
+  background:var(--ink); color:#fff; font-size:9px; line-height:15px; text-align:center;
+  vertical-align:top; margin:0 2px; cursor:pointer; user-select:none; }
+.notes{ margin-top:22px; border-top:1px dashed var(--faint); padding-top:10px; }
+.notes h3{ font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:var(--mid); margin-bottom:6px; }
+.notes ol{ list-style:none; display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:6px 18px; }
+.notes li{ font-family:var(--sans); font-size:11.5px; color:#333; padding:3px 4px; }
+.notes li .ann{ cursor:default; margin-right:6px; }
+.notes li.flash{ background:#e8e8e2; outline:1px dashed var(--ink); }
+
+/* ---------- map surface (screens 1 + 2) ---------- */
+.map-toolbar{ display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-bottom:10px; }
+.crumb{ font-size:11px; }
+.crumb button{ text-decoration:underline; padding:0 1px; }
+.crumb .sep{ color:var(--faint); padding:0 3px; }
+.lens-bar{ margin-left:auto; display:flex; gap:4px; flex-wrap:wrap; align-items:center; }
+.lens-bar .lbl{ font-size:9px; letter-spacing:.1em; color:var(--mid); margin-right:2px; }
+
+.map-wrap{ display:flex; gap:14px; align-items:stretch; }
+.alt-rail{ width:112px; flex:none; border:1px solid var(--line); background:var(--paper); padding:8px; }
+.alt-rail .lbl{ font-size:9px; letter-spacing:.12em; color:var(--mid); margin-bottom:8px; }
+.alt-step{ display:block; width:100%; text-align:left; padding:6px 6px; border-left:3px solid var(--fill); margin-bottom:4px; font-size:10px; color:var(--mid); }
+.alt-step small{ display:block; font-size:9px; color:var(--faint); }
+.alt-step.cur{ border-left-color:var(--ink); color:var(--ink); background:var(--fill); }
+.map-canvas{ flex:1; border:1px solid var(--line); background:
+  repeating-linear-gradient(0deg, transparent, transparent 23px, #ebebe7 23px, #ebebe7 24px),
+  var(--paper);
+  padding:16px; min-height:340px; overflow-x:auto; }
+
+.flow-row{ display:flex; align-items:stretch; gap:0; flex-wrap:wrap; margin-bottom:14px; }
+.zone{ background:var(--paper); border:1.5px solid var(--ink); padding:8px 10px; min-width:150px; flex:1;
+  cursor:pointer; position:relative; }
+.zone:hover{ outline:2px solid var(--faint); }
+.zone h4{ font-size:12px; }
+.zone .meta{ font-size:10px; color:var(--mid); margin-top:3px; min-height:26px; }
+.zone .layers{ margin-top:6px; display:flex; gap:3px; }
+.zone .layers i{ font-style:normal; font-size:8px; width:13px; height:13px; border:1px solid var(--faint);
+  color:var(--faint); text-align:center; line-height:12px; }
+.zone .layers i.on{ background:var(--ink); color:#fff; border-color:var(--ink); }
+.zone .heat{ position:absolute; top:-8px; right:-6px; background:var(--paper); border:1px solid var(--ink);
+  font-size:9px; padding:0 4px; }
+.zone .from{ position:absolute; top:-8px; left:8px; background:var(--paper); font-size:8px; color:var(--mid); padding:0 3px; border:1px dashed var(--faint); }
+.arrow{ flex:none; align-self:center; width:56px; text-align:center; position:relative; padding:0 2px; }
+.arrow::before{ content:"⟶"; font-size:16px; color:var(--ink); }
+.arrow .alab{ display:block; font-size:8.5px; color:var(--mid); white-space:nowrap; }
+.sys-rail{ border-top:1px dashed var(--faint); padding-top:10px; margin-top:4px; }
+.sys-rail .lbl{ font-size:9px; letter-spacing:.1em; color:var(--mid); margin-bottom:6px; }
+.sys-row{ display:flex; gap:8px; flex-wrap:wrap; }
+.sys{ border:1px dashed var(--line); background:var(--paper); padding:6px 9px; font-size:10px; flex:1; min-width:120px; }
+.sys b{ display:block; font-size:11px; }
+.sys.hot{ border:1.5px solid var(--ink); box-shadow:3px 3px 0 var(--fill); }
+
+/* area view (z2) */
+.area-head{ display:flex; align-items:baseline; gap:10px; margin-bottom:12px; flex-wrap:wrap; }
+.area-head h3{ font-size:13px; }
+.screens-row{ display:flex; gap:0; flex-wrap:wrap; align-items:stretch; }
+.mini-frame{ width:132px; flex:none; border:1px solid var(--ink); background:var(--paper); padding:6px; cursor:pointer; position:relative; }
+.mini-frame:hover{ outline:2px solid var(--faint); }
+.mini-frame h5{ font-size:10px; border-bottom:1px solid var(--fill); padding-bottom:3px; margin-bottom:4px; }
+.mini-frame .new{ position:absolute; top:-8px; right:-5px; background:var(--ink); color:#fff; font-size:8px; padding:0 4px; }
+.usage-chips{ margin-top:14px; font-size:10px; color:var(--mid); }
+.usage-chips .chip{ margin:2px 3px 0 0; }
+
+/* screen view (z3) */
+.z3{ display:flex; gap:16px; flex-wrap:wrap; }
+.device{ width:250px; flex:none; border:2px solid var(--ink); background:var(--paper); padding:10px; }
+.device .bar{ height:10px; background:var(--fill); margin-bottom:8px; }
+.field{ border:1px solid var(--line); padding:5px 6px; font-size:10px; color:var(--mid); margin-bottom:6px; }
+.elem-list{ flex:1; min-width:240px; }
+.elem-list h4{ font-size:11px; margin-bottom:6px; }
+.elem{ display:flex; justify-content:space-between; align-items:center; gap:8px; width:100%; text-align:left;
+  border:1px solid var(--line); background:var(--paper); padding:7px 9px; margin-bottom:5px; font-size:11px; }
+.elem:hover{ outline:2px solid var(--faint); }
+.elem .k{ font-size:9px; color:var(--mid); border:1px dashed var(--faint); padding:0 4px; flex:none; }
+.hotspot{ outline:1.5px dashed var(--ink); cursor:pointer; }
+.hotspot:hover{ background:var(--fill); }
+
+/* lens legend (screen 2) */
+.lens-legend{ margin-top:12px; border:1px dashed var(--line); background:var(--paper); padding:10px 12px; display:flex; gap:22px; flex-wrap:wrap; }
+.lens-legend div{ min-width:180px; flex:1; }
+.lens-legend .lbl{ font-size:9px; letter-spacing:.1em; color:var(--mid); text-transform:uppercase; }
+.lens-legend p{ font-size:11px; margin-top:2px; }
+
+/* ---------- change feed (screen 3) ---------- */
+.feed-filter{ display:flex; gap:5px; align-items:center; margin-bottom:12px; flex-wrap:wrap; }
+.card{ border:1px solid var(--line); background:var(--paper); margin-bottom:8px; transition:opacity .15s; }
+.card.filtered{ opacity:.3; }
+.card.clash{ border:2px solid var(--ink); box-shadow:4px 4px 0 var(--fill); }
+.card-head{ display:flex; align-items:center; gap:10px; width:100%; text-align:left; padding:9px 12px; }
+.card-head .one{ flex:1; }
+.card-head .one b{ font-size:12.5px; display:block; }
+.card-head .one span{ font-size:10.5px; color:var(--mid); }
+.card-head .tw{ flex:none; font-size:14px; color:var(--mid); }
+.card-body{ display:none; border-top:1px dashed var(--faint); padding:10px 12px; }
+.card.open .card-body{ display:block; }
+.mini-map{ display:flex; gap:4px; flex-wrap:wrap; margin:6px 0 10px; }
+.mini-map .mz{ font-size:9px; border:1px solid var(--line); padding:2px 6px; color:var(--mid); background:var(--paper); }
+.mini-map .mz.hit{ background:var(--ink); color:#fff; border-color:var(--ink); animation:pulse 1.4s infinite; }
+.mini-map .mz.sysm{ border-style:dashed; }
+@keyframes pulse{ 0%,100%{opacity:1} 50%{opacity:.55} }
+.per-lens{ display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:6px; margin-top:4px; }
+.per-lens .pl{ border:1px dashed var(--line); padding:6px 8px; font-size:10.5px; background:var(--paper); }
+.per-lens .pl b{ display:block; font-size:9px; letter-spacing:.1em; text-transform:uppercase; color:var(--mid); margin-bottom:2px; }
+.card-actions{ margin-top:10px; display:flex; gap:8px; }
+
+/* ---------- PR (screen 4) ---------- */
+.pr-head{ border:1px solid var(--ink); background:var(--paper); padding:12px 14px; margin-bottom:10px; }
+.pr-head h2{ font-size:14px; }
+.pr-head .small{ margin-top:2px; }
+.clash-banner{ margin-top:8px; border:2px solid var(--ink); padding:6px 10px; font-size:11px; background:var(--fill); }
+.pr-tabs{ display:flex; gap:0; flex-wrap:wrap; margin-bottom:-1px; position:relative; z-index:2; }
+.pr-tab{ border:1px solid var(--line); border-bottom:none; background:var(--fill); padding:6px 14px; font-size:11px; }
+.pr-tab.on{ background:var(--paper); border-color:var(--ink); font-weight:700; }
+.pr-panel{ display:none; border:1px solid var(--ink); background:var(--paper); padding:14px; }
+.pr-panel.on{ display:block; }
+.pr-panel h4{ font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--mid); margin:10px 0 6px; }
+.pr-panel h4:first-child{ margin-top:0; }
+.thumbs{ display:flex; gap:14px; flex-wrap:wrap; }
+.thumb{ width:150px; border:1px dashed var(--line); padding:6px; font-size:9px; color:var(--mid); }
+.thumb .cap{ margin-bottom:4px; font-size:9px; }
+.dl{ font-size:11px; }
+.dl li{ list-style:none; padding:3px 0; border-bottom:1px dotted var(--fill); }
+.dl li::before{ content:"— "; color:var(--faint); }
+.strtable{ width:100%; border-collapse:collapse; font-size:10.5px; }
+.strtable th, .strtable td{ border:1px solid var(--fill); padding:4px 6px; text-align:left; }
+.strtable th{ background:var(--fill); font-size:9px; letter-spacing:.06em; text-transform:uppercase; }
+.diff{ background:#f0f0ec; border:1px solid var(--line); padding:8px 10px; font-size:10.5px; overflow-x:auto; white-space:pre; line-height:1.5; }
+.diff .add{ background:#e2e2da; display:block; }
+.diff .del{ color:var(--faint); text-decoration:line-through; display:block; }
+.flow-strip{ display:flex; align-items:center; gap:6px; flex-wrap:wrap; font-size:10.5px; }
+.flow-strip .st{ border:1px solid var(--ink); padding:4px 8px; background:var(--paper); }
+.flow-strip .st.newst{ background:var(--ink); color:#fff; }
+.pr-foot{ margin-top:10px; border:1px dashed var(--line); padding:7px 10px; font-size:10.5px; color:var(--mid); background:var(--paper); }
+
+/* ---------- agent (screen 5) ---------- */
+.agent-grid{ display:grid; grid-template-columns:1.3fr 1fr; gap:12px; }
+.agent-task{ border:1px solid var(--ink); background:var(--paper); padding:12px; }
+.agent-task h2{ font-size:13px; }
+.progress{ border:1px solid var(--ink); height:14px; margin:8px 0 4px; position:relative; background:var(--paper); }
+.progress i{ position:absolute; inset:0; width:61%; background:repeating-linear-gradient(45deg,var(--ink),var(--ink) 4px,var(--paper) 4px,var(--paper) 7px); }
+.contract{ border:1px dashed var(--line); background:var(--paper); padding:10px 12px; font-size:11px; }
+.contract b{ font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:var(--mid); display:block; margin-bottom:4px; }
+.zone-progress{ margin-top:10px; }
+.zp{ display:flex; justify-content:space-between; border:1px solid var(--line); background:var(--paper); padding:5px 9px; margin-bottom:4px; font-size:11px; }
+.zp .st-done{ color:var(--mid); }
+.zp.active-zp{ border-color:var(--ink); border-width:1.5px; }
+.zp .working{ animation:pulse 1.2s infinite; }
+.agent-log{ margin-top:10px; border:1px solid var(--line); background:#f0f0ec; padding:8px 10px; font-size:10px; color:var(--mid); height:96px; overflow:hidden; }
+.agent-log div{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.agent-log .cur{ color:var(--ink); }
+.flagged{ margin-top:12px; }
+.flagged .fi{ border:1px solid var(--line); border-left:4px solid var(--ink); background:var(--paper); padding:6px 10px; font-size:11px; margin-bottom:5px; }
+.agent-detail{ display:none; margin-top:12px; border:1.5px solid var(--ink); background:var(--paper); padding:12px; }
+.agent-detail.open{ display:block; }
+
+/* ---------- workbench (screen 6) ---------- */
+.wb-crumb{ font-size:11px; margin-bottom:10px; }
+.wb-crumb button{ text-decoration:underline; }
+.wb-crumb .sep{ color:var(--faint); padding:0 4px; }
+.wb-grid{ display:grid; grid-template-columns:1.4fr 1fr; gap:12px; }
+.wb-elem{ border:2px solid var(--ink); background:var(--paper); padding:14px; }
+.wb-elem .kind{ font-size:9px; letter-spacing:.12em; text-transform:uppercase; border:1px solid var(--ink); display:inline-block; padding:1px 6px; margin-bottom:6px; }
+.wb-elem h2{ font-size:15px; }
+.wb-value{ border:1px dashed var(--line); background:var(--fill); padding:10px 12px; font-size:13px; margin:10px 0; }
+.wb-facts li{ list-style:none; font-size:10.5px; color:var(--mid); padding:2px 0; }
+.wb-facts li::before{ content:"· "; }
+.wb-side .box{ padding:10px 12px; margin-bottom:10px; }
+.wb-side h4{ font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:var(--mid); margin-bottom:6px; }
+.care{ font-size:11px; padding:4px 0; border-bottom:1px dotted var(--fill); font-family:var(--sans); }
+.care b{ font-family:var(--mono); font-size:10px; }
+.spine{ font-size:10px; }
+.spine div{ padding:3px 0 3px 0; color:var(--mid); }
+.spine div.here{ color:var(--ink); font-weight:700; }
+.spine div::before{ content:"└ "; color:var(--faint); }
+.spine div:first-child::before{ content:""; }
+.spine div:nth-child(2){ padding-left:10px; } .spine div:nth-child(3){ padding-left:20px; } .spine div:nth-child(4){ padding-left:30px; }
+.ask{ margin-top:0; }
+.ask input{ width:100%; border:1px solid var(--ink); background:var(--paper); padding:8px 10px; font-size:12px; font-family:var(--mono); }
+.ask .row{ display:flex; gap:8px; margin-top:8px; }
+.preview{ display:none; margin-top:10px; border:1px dashed var(--ink); background:var(--paper); padding:10px 12px; }
+.preview.open{ display:block; }
+.preview .pl-line{ font-size:11px; padding:2px 0; }
+.preview .radius{ margin-top:8px; border-top:1px dotted var(--faint); padding-top:6px; font-size:10.5px; color:var(--mid); }
+.elem-picker{ margin-bottom:10px; display:flex; gap:5px; flex-wrap:wrap; align-items:center; }
+
+/* ---------- responsive ---------- */
+@media (max-width: 760px){
+  #rail{ right:0; bottom:auto; width:auto; height:auto; flex-direction:row; align-items:center;
+    border-right:none; border-bottom:1px solid var(--line); padding:6px 8px; overflow-x:auto; gap:5px; }
+  #rail .logo{ border:none; margin:0; padding:0 6px 0 0; white-space:nowrap; }
+  #rail .logo b{ font-size:11px; }
+  #rail .logo .tagline{ display:none; }
+  .rail-item{ flex:none; padding:4px 6px; }
+  .rail-item span{ display:none; }
+  .rail-hint{ display:none; }
+  main{ margin-left:0; padding:70px 12px 60px; }
+  .map-wrap{ flex-direction:column; }
+  .alt-rail{ width:100%; display:flex; gap:4px; align-items:center; }
+  .alt-rail .lbl{ margin:0 6px 0 0; }
+  .alt-step{ flex:1; border-left:none; border-top:3px solid var(--fill); margin:0; }
+  .alt-step.cur{ border-top-color:var(--ink); }
+  .flow-row{ flex-direction:column; }
+  .arrow{ width:100%; padding:2px 0; }
+  .arrow::before{ content:"↓"; }
+  .agent-grid, .wb-grid{ grid-template-columns:1fr; }
+  .device{ width:100%; }
+}
+</style>
+</head>
+<body>
+
+<!-- ================= SCREEN-MAP NAV (always visible) ================= -->
+<nav id="rail">
+  <div class="logo"><b>designbook</b><span class="tagline">concept wireframe — not a UI, a mental model</span></div>
+  <button class="rail-item" data-go="overview"><span class="n">1</span>Overview<span>whole app, at altitude</span></button>
+  <button class="rail-item" data-go="lenses"><span class="n">2</span>Lenses<span>same map, 4 angles</span></button>
+  <button class="rail-item" data-go="feed"><span class="n">3</span>Change feed<span>"flooring will change"</span></button>
+  <button class="rail-item" data-go="pr"><span class="n">4</span>PR #482<span>one change, 4 framings</span></button>
+  <button class="rail-item" data-go="agent"><span class="n">5</span>Agent<span>sweeping change, watched</span></button>
+  <button class="rail-item" data-go="workbench"><span class="n">6</span>Workbench<span>max zoom on 1 element</span></button>
+  <div class="rail-hint">keys 1–6 jump screens</div>
+</nav>
+
+<main>
+
+<!-- ================= 1 · OVERVIEW ================= -->
+<section class="screen" id="scr-overview">
+  <div class="screen-head">
+    <div class="kicker">screen 1 · overview</div>
+    <h1>The whole app, at altitude <i class="ann" data-n="1">1</i></h1>
+    <p>One structure — “Ferrytale”, an example SaaS — rendered as a derived structural map.
+       Zones, flows between them, and the shared systems everything hangs off. Zoom is a first-class control. <i class="ann" data-n="2">2</i></p>
+  </div>
+  <div class="map-host"></div>
+  <div class="notes">
+    <h3>Concept notes</h3>
+    <ol>
+      <li data-n="1"><i class="ann">1</i>The map is <b>derived from the codebase</b>, never drawn. It can’t rot, and changing the map means changing the building.</li>
+      <li data-n="2"><i class="ann">2</i>Altitude is one continuous surface: whole app → area → screen → element. Max zoom bottoms out in the workbench (screen 6), not an inspector.</li>
+      <li data-n="3"><i class="ann">3</i>Shared systems (tokens, copy, flags, models) are drawn as structure — load-bearing members — not as settings pages.</li>
+      <li data-n="4"><i class="ann">4</i>Flow arrows stay quiet by default; metrics appear when a lens asks for them (try the Product lens).</li>
+      <li data-n="5"><i class="ann">5</i>Click any zone to drill in. The breadcrumb keeps altitude from ever being lost.</li>
+    </ol>
+  </div>
+</section>
+
+<!-- ================= 2 · LENSES ================= -->
+<section class="screen" id="scr-lenses">
+  <div class="screen-head">
+    <div class="kicker">screen 2 · lens switcher</div>
+    <h1>Same structure, four angles <i class="ann" data-n="2">2</i></h1>
+    <p>Plan / elevation / section of one building. A lens re-annotates the map for a discipline —
+       it dims the rest, it never hides it. <i class="ann" data-n="1">1</i> Lens and altitude compose: any angle at any zoom. <i class="ann" data-n="3">3</i></p>
+  </div>
+  <div class="map-host"></div>
+  <div class="lens-legend" id="lens-legend"></div>
+  <div class="notes">
+    <h3>Concept notes</h3>
+    <ol>
+      <li data-n="1"><i class="ann">1</i><b>Dim, never hide.</b> Filter attention, not access — everything stays visible and clickable at 35% opacity.</li>
+      <li data-n="2"><i class="ann">2</i>Same boxes, different labels. A lens changes annotation, not geometry — the views are all true, all of the same thing.</li>
+      <li data-n="3"><i class="ann">3</i>Lens × altitude are orthogonal. Switch back to screen 1 — your lens and zoom persist; screens 1 and 2 are literally the same surface.</li>
+      <li data-n="4"><i class="ann">4</i>▲n badges = changes visible through this lens this week. Zones with none recede; they never disappear.</li>
+    </ol>
+  </div>
+</section>
+
+<!-- ================= 3 · CHANGE FEED ================= -->
+<section class="screen" id="scr-feed">
+  <div class="screen-head">
+    <div class="kicker">screen 3 · change feed</div>
+    <h1>Recent changes, at altitude <i class="ann" data-n="1">1</i></h1>
+    <p>“The flooring will change.” One-liners at boundary level — skim past what doesn’t apply,
+       expand to zoom to the affected spot. <i class="ann" data-n="2">2</i></p>
+  </div>
+  <div class="feed-filter" id="feed-filter">
+    <span class="small">view through:</span>
+  </div>
+  <div id="feed-list"></div>
+  <div class="notes">
+    <h3>Concept notes</h3>
+    <ol>
+      <li data-n="1"><i class="ann">1</i>The feed speaks at boundary level — what changes about the building, not which files moved. Detail is one zoom away, never forced.</li>
+      <li data-n="2"><i class="ann">2</i>Expanding a card <b>is</b> zooming: it opens onto the map spot it affects, not a separate detail page.</li>
+      <li data-n="3"><i class="ann">3</i>One change, four readings: every expanded card summarizes the <b>same underlying diff</b> once per lens.</li>
+      <li data-n="4"><i class="ann">4</i>The load-bearing card ignores lens filters. Clash detection: structural changes surface to every discipline by definition.</li>
+      <li data-n="5"><i class="ann">5</i>Filtering dims rather than removes — same rule as the lenses. You always see that the other trades are working.</li>
+    </ol>
+  </div>
+</section>
+
+<!-- ================= 4 · PR THROUGH LENSES ================= -->
+<section class="screen" id="scr-pr">
+  <div class="screen-head">
+    <div class="kicker">screen 4 · a PR through lenses</div>
+    <h1>One change, four framings <i class="ann" data-n="1">1</i></h1>
+    <p>PR #482 is a single commit set. Nothing here is split or access-gated — each tab is a
+       projection of the same diff for a different trade. <i class="ann" data-n="3">3</i></p>
+  </div>
+
+  <div class="pr-head">
+    <h2>#482 · checkout: add payment step</h2>
+    <div class="small">m.fitz + agent · branch <span class="mutefill">feat/payment-step</span> · 1 commit · 17 files · +412 −96</div>
+    <div class="clash-banner">⚠ CLASH DETECTION — 1 load-bearing change: <b>Subscription.plan → Subscription.tier</b> (data model). Surfaced to all lenses. <i class="ann" data-n="2">2</i></div>
+  </div>
+
+  <div class="pr-tabs" id="pr-tabs">
+    <button class="pr-tab" data-pr="design">Design</button>
+    <button class="pr-tab" data-pr="product">Product</button>
+    <button class="pr-tab" data-pr="eng">Engineering</button>
+    <button class="pr-tab" data-pr="content">Content</button>
+  </div>
+
+  <div class="pr-panel" data-pr="design">
+    <h4>Layout delta</h4>
+    <div class="thumbs">
+      <div class="thumb"><div class="cap">BEFORE · checkout, 2 steps</div><div class="sk w80"></div><div class="sk w60"></div><div class="sk"></div><div class="sk w40"></div></div>
+      <div class="thumb"><div class="cap">AFTER · checkout, 3 steps (+ payment)</div><div class="sk w80"></div><div class="sk"></div><div class="sk w60"></div><div class="sk"></div><div class="sk w40"></div></div>
+    </div>
+    <h4>Component + token delta</h4>
+    <ul class="dl">
+      <li>&lt;CardInput&gt; — new variant <b>inline</b> (was: stacked only)</li>
+      <li>+1 token: <b>space.checkout.gap</b> (proposed — flag for tokens review)</li>
+      <li>all other spacing/type/color from existing tokens ✓ — no new colors</li>
+      <li>de-DE strings run ~18% long → “Pay securely” button may wrap (see Content)</li>
+    </ul>
+  </div>
+
+  <div class="pr-panel" data-pr="product">
+    <h4>Flow delta</h4>
+    <div class="flow-strip">
+      <span class="st">Plans</span>→<span class="st">Details</span>→<span class="st newst">Payment ▲new</span>→<span class="st">Confirm</span>
+    </div>
+    <h4>Rollout + metrics impact</h4>
+    <ul class="dl">
+      <li>gated by flag <b>payment_v2</b> — currently 0% rollout</li>
+      <li>funnel gains a step: watch new step-3 drop-off (baseline completion 71%)</li>
+      <li>touches billing model (load-bearing — see clash banner)</li>
+      <li>no pricing, plan, or entitlement changes</li>
+    </ul>
+  </div>
+
+  <div class="pr-panel" data-pr="eng">
+    <h4>Diff (the actual thing — every other tab is a view of this)</h4>
+    <div class="diff">checkout/PaymentStep.tsx        <b>+184</b>
+checkout/CardInput.tsx          <b>+61</b>
+models/subscription.ts          <b>+9 −9</b>  ⚠ load-bearing
+<span class="del">-  plan: PlanId</span><span class="add">+  tier: TierId   // renamed — 31 strings + 2 flags reference "plan"</span>flags.ts, checkout/i18n.ts, …  <b>12 more files</b></div>
+    <h4>Checks</h4>
+    <ul class="dl">
+      <li>12 tests added ✓ · types ✓ · no new deps</li>
+      <li>migration required for Subscription rename (reversible)</li>
+    </ul>
+  </div>
+
+  <div class="pr-panel" data-pr="content">
+    <h4>String delta — 12 new, 3 changed</h4>
+    <table class="strtable">
+      <tr><th>key</th><th>en</th><th>status</th></tr>
+      <tr><td>btn.pay.label</td><td>“Pay securely”</td><td>new</td></tr>
+      <tr><td>payment.title</td><td>“Payment details”</td><td>new</td></tr>
+      <tr><td>payment.card.hint</td><td>“Card number”</td><td>new</td></tr>
+      <tr><td>checkout.step3.error</td><td>“That card didn’t go through…”</td><td>new</td></tr>
+      <tr><td>billing.plan.label</td><td>“Plan” → “Tier”</td><td>changed ⚠ clash</td></tr>
+    </table>
+    <div class="small" style="margin-top:6px">+10 more · locales pending: de, fr, ja · tone check: moment-of-payment = reassuring</div>
+  </div>
+
+  <div class="pr-foot">same diff under every tab · commit <b>3f2c9a1</b> — lenses filter attention, not access. Raw diff always one click away from any lens.</div>
+
+  <div class="notes">
+    <h3>Concept notes</h3>
+    <ol>
+      <li data-n="1"><i class="ann">1</i>Not four PRs — one commit set, four projections. The footer shows the same sha under every tab on purpose.</li>
+      <li data-n="2"><i class="ann">2</i>“designbook runs clash detection on every PR”: the model rename is flagged load-bearing before any human reads a file.</li>
+      <li data-n="3"><i class="ann">3</i>Access is never gated. A designer can open the raw diff; the default framing is just tuned to their trade.</li>
+      <li data-n="4"><i class="ann">4</i>Cross-lens echoes are the point: the de-DE overflow appears in Design, its strings in Content, its flag in Product — one change, coherent everywhere.</li>
+    </ol>
+  </div>
+</section>
+
+<!-- ================= 5 · AGENT AT ALTITUDE ================= -->
+<section class="screen" id="scr-agent">
+  <div class="screen-head">
+    <div class="kicker">screen 5 · agent activity at altitude</div>
+    <h1>Sweeping change, watched from above <i class="ann" data-n="1">1</i></h1>
+    <p>An agent is rewriting the guts. The human supervises at the structural level —
+       and can zoom into any screen it touched. <i class="ann" data-n="4">4</i></p>
+  </div>
+
+  <div class="agent-grid">
+    <div>
+      <div class="agent-task">
+        <div class="kicker">agent task · running</div>
+        <h2>Migrate form validation to zod across 23 screens</h2>
+        <div class="progress"><i id="agent-bar"></i></div>
+        <div class="small"><span id="agent-count">14</span> / 23 screens converted · est. 9 min remaining</div>
+        <div class="zone-progress" id="agent-zones"></div>
+        <div class="agent-log" id="agent-log"></div>
+      </div>
+      <div class="flagged">
+        <div class="kicker" style="margin-bottom:6px">flagged out to humans (2) <i class="ann" data-n="3">3</i></div>
+        <div class="fi"><b>→ Content:</b> 2 error strings normalized while migrating (“is required” casing) — approve or revert wording.</div>
+        <div class="fi"><b>→ Engineering:</b> Settings/SSO uses a custom async validator — converted, but wants review.</div>
+      </div>
+    </div>
+    <div>
+      <div class="contract">
+        <b>Boundary contract <i class="ann" data-n="2">2</i></b>
+        Stated before starting, checked continuously:<br><br>
+        · no external behavior changes<br>
+        · no new strings, tokens, or flags (2 string normalizations flagged ↖)<br>
+        · nothing load-bearing touched — clash detection: <b>0 hits</b><br>
+        · every screen’s tests pass before moving on
+      </div>
+      <div class="box" style="margin-top:10px; padding:10px 12px;">
+        <div class="kicker" style="margin-bottom:6px">where it is on the map</div>
+        <div class="mini-map" id="agent-map"></div>
+        <button class="wire-btn" id="agent-zoom-btn">⌕ zoom into what it’s doing</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="agent-detail" id="agent-detail">
+    <div class="kicker">zoomed: Settings ▸ Profile form (screen 12 of 23) — this detail exists on demand, not by default</div>
+    <div class="diff" style="margin-top:8px"><span class="del">-  if (!values.email || !EMAIL_RE.test(values.email)) errors.email = "Email is Required";</span><span class="add">+  const schema = z.object({ email: z.string().email("Email is required") });</span>   // behavior identical · string casing normalized (flagged to Content)
+   // tests: profile-form.test.ts 8/8 ✓</div>
+    <div class="small" style="margin-top:6px">breadcrumb: App ▸ Settings ▸ Profile form ▸ validation — <button class="wire-btn" data-go="workbench">continue to workbench →</button></div>
+  </div>
+
+  <div class="notes">
+    <h3>Concept notes</h3>
+    <ol>
+      <li data-n="1"><i class="ann">1</i>The agent works at file level; the human supervises at structure level. The map is the supervision surface — 23 screens stays skimmable.</li>
+      <li data-n="2"><i class="ann">2</i>The boundary contract states what <b>won’t</b> change up front. Clash detection runs against the agent continuously, same as against PRs.</li>
+      <li data-n="3"><i class="ann">3</i>When the agent crosses a discipline boundary it flags <b>outward to a lens</b>, not into a generic log — the electrician hears about floor outlets, not the flooring.</li>
+      <li data-n="4"><i class="ann">4</i>Zoom is the trust mechanism: sweeping autonomy is acceptable because any touched screen is one zoom from full detail.</li>
+    </ol>
+  </div>
+</section>
+
+<!-- ================= 6 · WORKBENCH ================= -->
+<section class="screen" id="scr-workbench">
+  <div class="screen-head">
+    <div class="kicker">screen 6 · zoom-in workbench</div>
+    <h1>Max zoom: one element <i class="ann" data-n="1">1</i></h1>
+    <p>The bottom of the zoom gesture. An element, who cares about it, where it sits in the structure —
+       and a scoped way to change it.</p>
+  </div>
+
+  <div class="elem-picker" id="wb-picker"><span class="small">element (reached by zoom, picker is a wireframe convenience):</span></div>
+  <div class="wb-crumb" id="wb-crumb"></div>
+  <div class="wb-grid">
+    <div>
+      <div class="wb-elem" id="wb-elem"></div>
+      <div class="box ask" style="margin-top:10px; padding:12px;">
+        <div class="kicker" style="margin-bottom:6px">ask agent to change <i class="ann" data-n="3">3</i></div>
+        <input id="wb-ask" type="text" placeholder="">
+        <div class="row">
+          <button class="wire-btn primary" id="wb-preview-btn">preview scope</button>
+          <span class="small" style="align-self:center">nothing runs until scope is shown + accepted</span>
+        </div>
+        <div class="preview" id="wb-preview"></div>
+      </div>
+    </div>
+    <div class="wb-side">
+      <div class="box"><h4>which lenses care <i class="ann" data-n="2">2</i></h4><div id="wb-care"></div></div>
+      <div class="box"><h4>place in the structure <i class="ann" data-n="4">4</i></h4><div class="spine" id="wb-spine"></div>
+        <div style="margin-top:8px"><button class="wire-btn" id="wb-up">▲ back up to altitude</button></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="notes">
+    <h3>Concept notes</h3>
+    <ol>
+      <li data-n="1"><i class="ann">1</i>Max zoom lands in an <b>editing surface</b>, not an inspector. Zoom out to supervise, zoom in to act — one gesture, both directions.</li>
+      <li data-n="2"><i class="ann">2</i>“Who cares” is computed from structure, not from a CODEOWNERS-style declaration. The element knows its lenses because the map is derived.</li>
+      <li data-n="3"><i class="ann">3</i>Change requests are scoped by position: the preview shows blast radius (strings/files/flows/tokens + load-bearing check) before anything runs.</li>
+      <li data-n="4"><i class="ann">4</i>The spine is the breadcrumb back up — the same altitude rail as screen 1, seen from the bottom.</li>
+    </ol>
+  </div>
+</section>
+
+</main>
+
+<script>
+/* =====================================================================
+   designbook concept wireframe — vanilla JS, no external requests.
+===================================================================== */
+"use strict";
+
+/* ---------------- data ---------------- */
+const LENSES = {
+  structure:{ name:"Structure", hi:"the skeleton only — zones, flows, shared systems, all equal", labels:"kinds + counts", dims:"nothing" },
+  design:   { name:"Design",    hi:"components, variants, tokens", labels:"component counts, stale variants, token usage", dims:"funnel metrics, file paths, string counts" },
+  product:  { name:"Product",   hi:"flows, funnels, flags", labels:"conversion, flag exposure, step counts", dims:"tokens, components, code" },
+  eng:      { name:"Engineering", hi:"modules, data models, churn", labels:"files, tests, churn", dims:"visual + copy layers" },
+  content:  { name:"Content",   hi:"strings, locales, tone surfaces", labels:"string counts, pending translations", dims:"code, tokens, metrics" }
+};
+const LENS_ORDER = ["structure","design","product","eng","content"];
+const LENS_LETTER = { design:"D", product:"P", eng:"E", content:"C" };
+
+const ZONES = [
+  { id:"marketing", name:"Marketing site", row:1,
+    screens:["Home","Pricing","Features","Customers","Blog","Contact"],
+    meta:{ structure:"6 screens · public", design:"14 comps · 2 stale variants", product:"top of funnel · 2 flags", eng:"apps/web · 41 files · low churn", content:"214 strings · 4 locales" },
+    heat:{ design:1, product:0, eng:0, content:3 } },
+  { id:"onboarding", name:"Onboarding", row:1,
+    screens:["Welcome","Create workspace","Invite team","Import data","Done"],
+    meta:{ structure:"5 screens · flow", design:"9 comps", product:"activation funnel · 61% complete", eng:"23 files · med churn", content:"58 strings · 1 locale missing" },
+    heat:{ design:0, product:2, eng:1, content:0 } },
+  { id:"dashboard", name:"Dashboard", row:1,
+    screens:["Overview","Projects","Project detail","Reports","Activity","Members","Search","Notifications"],
+    meta:{ structure:"8 screens · core", design:"31 comps", product:"main DAU surface · 6 flags", eng:"118 files · high churn", content:"190 strings" },
+    heat:{ design:1, product:0, eng:2, content:0 } },
+  { id:"settings", name:"Settings", row:2,
+    screens:["Profile","Workspace","SSO","API keys","Integrations","Notifications","Danger zone"],
+    meta:{ structure:"7 screens", design:"forms · 6 comps", product:"low traffic · 1 flag", eng:"34 files · agent active ▸", content:"96 strings · 1 tone issue" },
+    heat:{ design:0, product:0, eng:4, content:1 } },
+  { id:"billing", name:"Billing / Checkout", row:2,
+    screens:["Plans","Checkout: details","Checkout: payment","Confirmation"],
+    meta:{ structure:"4 screens · revenue path", design:"PR #482: +1 screen, 1 new variant", product:"upgrade funnel · flag payment_v2", eng:"17 files in flight · model rename ⚠", content:"31 strings · 12 new pending" },
+    heat:{ design:2, product:1, eng:3, content:2 } }
+];
+const SYSTEMS = [
+  { id:"tokens", name:"Design tokens", meta:"142 tokens · 3 themes", lens:"design" },
+  { id:"copy",   name:"Copy / i18n",   meta:"612 strings · 4 locales", lens:"content" },
+  { id:"flags",  name:"Feature flags", meta:"18 flags · 3 stale", lens:"product" },
+  { id:"models", name:"Data models",   meta:"9 models · 1 rename ⚠", lens:"eng" }
+];
+const ZNAME = {}; ZONES.forEach(z=>ZNAME[z.id]=z.name); SYSTEMS.forEach(s=>ZNAME[s.id]=s.name);
+
+const PAYMENT_ELEMENTS = [
+  { id:"str.pay",         k:"string",    label:'"Pay securely" · btn.pay.label' },
+  { id:"comp.cardinput",  k:"component", label:"<CardInput> · variant=inline" },
+  { id:"flag.payment_v2", k:"flag",      label:"payment_v2 · gates this step" },
+  { id:"tok.gap",         k:"token",     label:"space.checkout.gap · proposed" }
+];
+
+const FEED = [
+  { id:"f1", lens:"content", head:"Checkout copy will change", sub:"12 new strings in the payment step · from PR #482", hits:["billing","copy"],
+    per:{ design:"2 strings run long in de-DE — pay button may wrap", product:"CTA wording changes on funnel step 3 — conversion-sensitive", eng:"keys added to checkout/i18n.ts — no code changes for you", content:"12 new strings · 4 locales pending · tone: moment-of-payment" },
+    link:{ label:"open PR #482 →", go:"pr" } },
+  { id:"f2", lens:"design", head:"Buttons get denser everywhere", sub:"token space.button.y 12 → 10 · re-renders 40 screens", hits:["tokens"],
+    per:{ design:"1 token edit · 40 screens re-render · 0 overflow detected", product:"no flow or metric impact expected", eng:"no code change — token build only", content:"no copy impact; 2 long labels re-checked ✓" } },
+  { id:"f3", lens:"product", head:"Onboarding loses a step", sub:"flag import_v1 → off · funnel 5 → 4 steps", hits:["onboarding","flags"],
+    per:{ design:"Import screen dormant, not deleted — variants kept", product:"activation funnel shortened · watch completion (was 61%)", eng:"dead-code candidate in 3 files once flag is removed", content:"6 strings dormant with the screen" } },
+  { id:"f4", lens:"eng", head:"Validation migration underway", sub:"agent task · 14 / 23 screens converted", hits:["settings","onboarding","billing"],
+    per:{ design:"no visual changes — contract holds", product:"no flow changes — contract holds", eng:"zod replaces hand-rolled validators · tests green per screen", content:"2 error strings normalized — flagged for approval" },
+    link:{ label:"watch agent →", go:"agent" } },
+  { id:"f5", lens:"clash", head:"LOAD-BEARING · Subscription.plan → Subscription.tier", sub:"data model rename · touches billing, settings, 2 flags, 31 strings", hits:["models","billing","settings"],
+    per:{ design:'"Plan" label appears in 7 layouts — rename ripples to UI', product:"pricing page + upgrade funnel copy affected · 2 flags reference plan ids", eng:"migration required · 17 call sites · reversible", content:'31 strings say “plan” — decide: rename in UI copy too, or code-only?' } }
+];
+
+const WB = {
+  "str.pay": { kind:"copy string", title:"btn.pay.label", value:'"Pay securely"',
+    crumb:["App","Billing / Checkout","Checkout: payment","btn.pay.label"],
+    facts:["4 locales: en ✓ · de ✓ · fr ✓ · ja pending","used in 2 files · rendered on 1 screen","added by PR #482 (unmerged)"],
+    care:{ content:"owns the value — tone: reassuring at the moment of payment", design:"longest locale (de) sets the button min-width", product:"primary CTA of funnel step 3 — wording is conversion-sensitive", eng:"key referenced in PayButton.tsx and checkout.test.ts" },
+    ask:"shorten across locales without losing the security cue",
+    preview:['~ en · "Pay securely" → "Pay now — secured"','~ de · agent drafts, Content approves before merge','~ fr, ja · queued behind de'],
+    radius:"blast radius: 1 string · 2 files · 0 flows · 0 tokens — nothing load-bearing" },
+  "comp.cardinput": { kind:"component variant", title:"<CardInput> · inline", value:"new variant introduced by PR #482 (stacked existed)",
+    crumb:["App","Billing / Checkout","Checkout: payment","<CardInput>"],
+    facts:["2 variants: stacked · inline (new)","consumes 6 tokens · 0 hard-coded values ✓","used on 1 screen (payment)"],
+    care:{ design:"owns variant geometry — inline must match form density", eng:"props typed · 4 tests · no new deps", product:"card entry is the highest-friction field on step 3", content:"placeholder + error strings routed through i18n ✓" },
+    ask:"make the inline variant the default everywhere card entry appears",
+    preview:["~ 1 usage today — becomes default for future usages","~ stacked variant kept, marked legacy"],
+    radius:"blast radius: 1 component · 1 screen today · 0 strings · 0 flows — nothing load-bearing" },
+  "flag.payment_v2": { kind:"feature flag", title:"payment_v2", value:"0% rollout · gates the new payment step",
+    crumb:["App","Shared systems","Feature flags","payment_v2"],
+    facts:["created by PR #482 · owner: product","gates: 1 screen, 3 strings, 1 model path","cleanup reminder auto-set at 100% + 30d"],
+    care:{ product:"owns rollout — funnel step appears only when on", eng:"2 code paths while live — flagged for cleanup", design:"payment screen invisible in prod until on — preview via flag override", content:"3 gated strings won’t reach translators until >0%" },
+    ask:"roll out to 10% of workspaces on the team plan",
+    preview:["~ rollout 0% → 10% · audience: team tier","~ funnel dashboards annotated automatically at ship time"],
+    radius:"blast radius: 1 flag · 1 flow changes shape for 10% — load-bearing? NO, reversible in one click" },
+  "tok.gap": { kind:"design token (proposed)", title:"space.checkout.gap", value:"20px · proposed in PR #482 — not yet in the set",
+    crumb:["App","Shared systems","Design tokens","space.checkout.gap"],
+    facts:["proposed value 20px · nearest existing: space.5 = 20px ⚠","would be used in 1 place","tokens review: pending"],
+    care:{ design:"owns the set — duplicate of space.5? probably reject", eng:"one alias vs one new token — build impact nil", product:"no impact", content:"no impact" },
+    ask:"replace with existing space.5 and drop the proposal",
+    preview:["~ PaymentStep.tsx · space.checkout.gap → space.5","~ proposal removed from PR #482 · token set unchanged"],
+    radius:"blast radius: 1 file · 0 visual change (same value) — nothing load-bearing" }
+};
+
+/* ---------------- state ---------------- */
+const S = { screen:"overview", lens:"structure", zoom:1, zone:null, sub:null, element:"str.pay", feedFilter:"all" };
+
+/* ---------------- helpers ---------------- */
+const $  = (sel, el) => (el||document).querySelector(sel);
+const $$ = (sel, el) => Array.from((el||document).querySelectorAll(sel));
+const esc = s => String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+
+/* ---------------- map renderer (screens 1 + 2 share this) ---------------- */
+function lensChips(){
+  return '<div class="lens-bar"><span class="lbl">LENS</span>' + LENS_ORDER.map(l =>
+    `<button class="chip ${S.lens===l?"on":""}" data-lens="${l}">${LENSES[l].name}</button>`).join("") + "</div>";
+}
+function crumbHTML(){
+  const parts = [`<button data-zoomto="1">App</button>`];
+  if (S.zoom>=2 && S.zone) parts.push(`<button data-zoomto="2">${esc(ZNAME[S.zone])}</button>`);
+  if (S.zoom>=3 && S.sub)  parts.push(`<button data-zoomto="3">${esc(S.sub)}</button>`);
+  return `<span class="crumb">${parts.join('<span class="sep">▸</span>')}</span>`;
+}
+function altRail(){
+  const steps = [ ["1","App","whole structure"], ["2","Area","one zone"], ["3","Screen","one surface"], ["4","Element","→ workbench"] ];
+  return `<div class="alt-rail"><div class="lbl">ALTITUDE</div>` + steps.map(s =>
+    `<button class="alt-step ${S.zoom==s[0]?"cur":""}" data-zoom="${s[0]}">z${s[0]} · ${s[1]}<small>${s[2]}</small></button>`).join("") + "</div>";
+}
+function zoneBox(z){
+  const dim = S.lens!=="structure" && (z.heat[S.lens]||0)===0 ? " dim":"";
+  const heat = S.lens!=="structure" && z.heat[S.lens] ? `<span class="heat">▲${z.heat[S.lens]} this week</span>` : "";
+  const from = z.row===2 ? `<span class="from">← from Dashboard${S.lens==="product" && z.id==="billing" ? " · 7.9% upgrade":""}</span>`:"";
+  const layers = Object.keys(LENS_LETTER).map(l=>`<i class="${S.lens===l?"on":""}">${LENS_LETTER[l]}</i>`).join("");
+  return `<div class="zone${dim}" data-zone="${z.id}">${from}${heat}<h4>${esc(z.name)}</h4><div class="meta">${esc(z.meta[S.lens])}</div><div class="layers">${layers}</div></div>`;
+}
+function arrow(label){
+  const on = S.lens==="product";
+  return `<div class="arrow"><span class="alab ${on?"":"dim"}">${on?esc(label):"·"}</span></div>`;
+}
+function sysBox(s){
+  const cls = S.lens==="structure" ? "" : (S.lens===s.lens ? " hot" : " dim");
+  return `<div class="sys${cls}"><b>${esc(s.name)}</b>${esc(s.meta)}</div>`;
+}
+function canvasZ1(){
+  const r1 = ZONES.filter(z=>z.row===1), r2 = ZONES.filter(z=>z.row===2);
+  return `<div class="flow-row">${zoneBox(r1[0])}${arrow("4.1% sign up")}${zoneBox(r1[1])}${arrow("61% activate")}${zoneBox(r1[2])}</div>
+    <div class="flow-row">${r2.map(zoneBox).join('<div class="arrow" style="visibility:hidden"></div>')}</div>
+    <div class="sys-rail"><div class="lbl">SHARED SYSTEMS — used by every zone · drawn as structure, not settings</div><div class="sys-row">${SYSTEMS.map(sysBox).join("")}</div></div>`;
+}
+function canvasZ2(){
+  const z = ZONES.find(x=>x.id===S.zone) || ZONES[4];
+  const frames = z.screens.map((name,i)=>{
+    const isPay = z.id==="billing" && name==="Checkout: payment";
+    return `<div class="mini-frame" data-sub="${esc(name)}">${isPay?'<span class="new">▲ PR #482</span>':""}<h5>${esc(name)}</h5><div class="sk w80"></div><div class="sk"></div><div class="sk w60"></div></div>`;
+  }).join('<div class="arrow"></div>');
+  const usage = z.id==="billing"
+    ? `<span class="chip">tokens ×12</span><span class="chip">strings ×31</span><span class="chip">flags ×2</span><span class="chip">models ×2 ⚠</span>`
+    : `<span class="chip">tokens ×?</span><span class="chip">strings ×?</span><span class="chip ph">wireframe: counts derived per zone</span>`;
+  return `<div class="area-head"><h3>${esc(z.name)}</h3><span class="small">${esc(z.meta[S.lens])}</span></div>
+    <div class="screens-row">${frames}</div>
+    <div class="usage-chips">pulls from shared systems: ${usage}</div>`;
+}
+function canvasZ3(){
+  if (S.zone!=="billing" || S.sub!=="Checkout: payment"){
+    return `<div class="area-head"><h3>${esc(S.sub||"Screen")}</h3><span class="small">${esc(ZNAME[S.zone]||"")}</span></div>
+      <div class="ph" style="padding:30px; text-align:center;">screen detail — only the payment step is modeled in this wireframe.<br>concept: every screen renders here, derived from code.</div>`;
+  }
+  const elems = PAYMENT_ELEMENTS.map(e =>
+    `<button class="elem" data-elem="${e.id}"><span>${esc(e.label)}</span><span class="k">${e.k}</span></button>`).join("");
+  return `<div class="area-head"><h3>Checkout: payment</h3><span class="small">▲ new in PR #482 · gated by payment_v2 · click anything dashed</span></div>
+    <div class="z3">
+      <div class="device">
+        <div class="bar"></div>
+        <div class="small" style="margin-bottom:6px">Payment details</div>
+        <div class="field hotspot" data-elem="comp.cardinput">Card number · &lt;CardInput inline&gt;</div>
+        <div style="display:flex; gap:6px"><div class="field" style="flex:1">MM/YY</div><div class="field" style="flex:1">CVC</div></div>
+        <div class="field">Name on card</div>
+        <div class="wire-btn primary hotspot" data-elem="str.pay" style="display:block; text-align:center; margin-top:8px;">Pay securely</div>
+        <div class="small hotspot" data-elem="flag.payment_v2" style="margin-top:8px; text-align:center;">⚑ step gated by payment_v2</div>
+      </div>
+      <div class="elem-list"><h4>Elements on this screen (one more zoom = workbench)</h4>${elems}</div>
+    </div>`;
+}
+function renderMap(){
+  const host = $("#scr-"+S.screen+" .map-host");
+  if (!host) return;
+  const canvas = S.zoom===1 ? canvasZ1() : S.zoom===2 ? canvasZ2() : canvasZ3();
+  host.innerHTML = `<div class="map-toolbar">${crumbHTML()}${lensChips()}</div>
+    <div class="map-wrap">${altRail()}<div class="map-canvas">${canvas}</div></div>`;
+  if (S.screen==="lenses") renderLegend();
+}
+function renderLegend(){
+  const L = LENSES[S.lens];
+  $("#lens-legend").innerHTML =
+    `<div><span class="lbl">lens</span><p><b>${L.name}</b></p></div>
+     <div><span class="lbl">highlights</span><p>${L.hi}</p></div>
+     <div><span class="lbl">labels become</span><p>${L.labels}</p></div>
+     <div><span class="lbl">dims (never hides)</span><p>${L.dims}</p></div>`;
+}
+function setZoom(z, ctx){
+  ctx = ctx || {};
+  if (ctx.zone) S.zone = ctx.zone;
+  if (ctx.sub)  S.sub  = ctx.sub;
+  if (z>=2 && !S.zone){ S.zone = "billing"; }
+  if (z>=3 && !S.sub){ S.sub = S.zone==="billing" ? "Checkout: payment" : (ZONES.find(x=>x.id===S.zone)||{screens:["Screen"]}).screens[0]; }
+  if (z>=4){ // max zoom bottoms out in the workbench
+    if (ctx.elem) S.element = ctx.elem;
+    go("workbench"); return;
+  }
+  S.zoom = z; renderMap();
+}
+
+/* ---------------- change feed ---------------- */
+function miniMap(hits){
+  const all = ZONES.map(z=>z.id).concat(SYSTEMS.map(s=>s.id));
+  return all.map(id => {
+    const sys = SYSTEMS.some(s=>s.id===id);
+    return `<span class="mz ${hits.includes(id)?"hit":""} ${sys?"sysm":""}">${esc(ZNAME[id])}</span>`;
+  }).join("");
+}
+function renderFeed(){
+  const chips = ["all","design","product","eng","content"].map(l =>
+    `<button class="chip ${S.feedFilter===l?"on":""}" data-ff="${l}">${l==="all"?"All":LENSES[l].name}</button>`).join("");
+  $("#feed-filter").innerHTML = `<span class="small">view through:</span>${chips}<span class="small" style="margin-left:6px">— dims, never hides <i class="ann" data-n="5">5</i></span>`;
+  $("#feed-list").innerHTML = FEED.map(c => {
+    const clash = c.lens==="clash";
+    const filtered = !clash && S.feedFilter!=="all" && c.lens!==S.feedFilter;
+    const tag = clash ? '<span class="tag inv">⚠ ALL LENSES</span>' : `<span class="tag">${LENSES[c.lens].name}</span>`;
+    const per = LENS_ORDER.slice(1).map(l=>`<div class="pl"><b>${LENSES[l].name}</b>${esc(c.per[l])}</div>`).join("");
+    const link = c.link ? `<button class="wire-btn" data-go="${c.link.go}">${esc(c.link.label)}</button>` : "";
+    return `<div class="card ${clash?"clash":""} ${filtered?"filtered":""}" id="${c.id}">
+      <button class="card-head" data-card="${c.id}">
+        ${tag}<span class="one"><b>${esc(c.head)} ${c.id==="f5"?'<i class="ann" data-n="4">4</i>':""}</b><span>${esc(c.sub)}</span></span><span class="tw">＋</span>
+      </button>
+      <div class="card-body">
+        <div class="small">expanding = zooming — where this lands on the map: <i class="ann" data-n="2">2</i></div>
+        <div class="mini-map">${miniMap(c.hits)}</div>
+        <div class="small">the same change, read through each lens: <i class="ann" data-n="3">3</i></div>
+        <div class="per-lens">${per}</div>
+        <div class="card-actions"><button class="wire-btn" data-openmap="${c.hits[0]}">⌕ open on map</button>${link}</div>
+      </div>
+    </div>`;
+  }).join("");
+}
+
+/* ---------------- agent ---------------- */
+const AGENT_ZONES = [
+  { z:"Settings",   done:"4 / 4 ✓" }, { z:"Onboarding", done:"3 / 5", active:true },
+  { z:"Dashboard",  done:"7 / 10" }, { z:"Billing / Checkout", done:"0 / 4 · queued" }
+];
+const AGENT_FILES = [ "onboarding/InviteForm.tsx — rewriting validator…", "onboarding/InviteForm.test.ts — running 6 tests…", "onboarding/ImportForm.tsx — reading…", "onboarding/ImportForm.tsx — rewriting validator…" ];
+let agentTick = 0, agentTimer = null;
+function renderAgent(){
+  $("#agent-zones").innerHTML = AGENT_ZONES.map(a =>
+    `<div class="zp ${a.active?"active-zp":""}"><span>${esc(a.z)}${a.active?' <span class="working">●</span>':""}</span><span class="st-done">${esc(a.done)}</span></div>`).join("");
+  $("#agent-map").innerHTML = miniMap(["settings","onboarding","dashboard"]);
+  tickAgent();
+  if (!agentTimer) agentTimer = setInterval(()=>{ if (S.screen==="agent"){ agentTick++; tickAgent(); } }, 1300);
+}
+function tickAgent(){
+  const log = [];
+  for (let i=3;i>=0;i--){ log.push(`<div class="${i===0?"cur":""}">${esc(AGENT_FILES[(agentTick+4-i)%AGENT_FILES.length])}</div>`); }
+  $("#agent-log").innerHTML = `<div>— structural log (boundary level) —</div>` + log.join("");
+}
+
+/* ---------------- workbench ---------------- */
+function renderWB(){
+  const w = WB[S.element];
+  $("#wb-picker").innerHTML = `<span class="small">element (reached by zoom — picker is a wireframe convenience):</span>` +
+    Object.keys(WB).map(id=>`<button class="chip ${S.element===id?"on":""}" data-wbel="${id}">${esc(WB[id].title)}</button>`).join("");
+  $("#wb-crumb").innerHTML = w.crumb.map((c,i)=> i<w.crumb.length-1
+      ? `<button data-crumbz="${i+1}">${esc(c)}</button>` : `<b>${esc(c)}</b>`)
+    .join('<span class="sep">▸</span>') + ` <span class="small">· z4 — max zoom</span>`;
+  $("#wb-elem").innerHTML = `<span class="kind">${esc(w.kind)}</span><h2>${esc(w.title)}</h2>
+    <div class="wb-value">${esc(w.value)}</div><ul class="wb-facts">${w.facts.map(f=>`<li>${esc(f)}</li>`).join("")}</ul>`;
+  $("#wb-care").innerHTML = LENS_ORDER.slice(1).map(l =>
+    `<div class="care"><b>${LENSES[l].name}</b> — ${esc(w.care[l])}</div>`).join("");
+  const spineTop = w.crumb.slice(0,-1).map(c=>`<div>${esc(c)}</div>`).join("");
+  $("#wb-spine").innerHTML = spineTop + `<div class="here">${esc(w.crumb[w.crumb.length-1])} ← you are here</div>`;
+  $("#wb-ask").value = ""; $("#wb-ask").placeholder = "e.g. " + w.ask;
+  $("#wb-preview").classList.remove("open");
+}
+function showPreview(){
+  const w = WB[S.element];
+  const instr = $("#wb-ask").value.trim() || w.ask;
+  $("#wb-preview").innerHTML = `<div class="kicker" style="margin-bottom:6px">scoped preview — nothing has run</div>
+    <div class="pl-line small">instruction: “${esc(instr)}”</div>` +
+    w.preview.map(p=>`<div class="pl-line">${esc(p)}</div>`).join("") +
+    `<div class="radius">${esc(w.radius)}</div>
+     <div class="card-actions"><button class="wire-btn primary" disabled>apply (not modeled in wireframe)</button><button class="wire-btn" id="wb-cancel">discard</button></div>`;
+  $("#wb-preview").classList.add("open");
+}
+
+/* ---------------- navigation ---------------- */
+function go(screen){
+  S.screen = screen;
+  $$(".screen").forEach(s=>s.classList.toggle("active", s.id==="scr-"+screen));
+  $$(".rail-item").forEach(b=>b.classList.toggle("active", b.dataset.go===screen));
+  if (screen==="overview" || screen==="lenses"){ if (S.zoom>3) S.zoom=3; renderMap(); }
+  if (screen==="feed") renderFeed();
+  if (screen==="agent") renderAgent();
+  if (screen==="workbench") renderWB();
+  window.scrollTo(0,0);
+}
+
+/* ---------------- one delegated click handler ---------------- */
+document.addEventListener("click", e => {
+  const t = e.target.closest("[data-go],[data-lens],[data-zoom],[data-zoomto],[data-zone],[data-sub],[data-elem],[data-ff],[data-card],[data-openmap],[data-pr],[data-wbel],[data-crumbz],#agent-zoom-btn,#wb-preview-btn,#wb-cancel,#wb-up,.ann");
+  if (!t) return;
+  if (t.dataset.go){ go(t.dataset.go); return; }
+  if (t.dataset.lens){ S.lens = t.dataset.lens; renderMap(); return; }
+  if (t.dataset.zoom){ setZoom(+t.dataset.zoom); return; }
+  if (t.dataset.zoomto){ const z=+t.dataset.zoomto; S.zoom=z; if(z<3)S.sub=null; if(z<2)S.zone=null; renderMap(); return; }
+  if (t.dataset.zone){ setZoom(2, {zone:t.dataset.zone}); return; }
+  if (t.dataset.sub){ setZoom(3, {sub:t.dataset.sub}); return; }
+  if (t.dataset.elem){ setZoom(4, {elem:t.dataset.elem}); return; }
+  if (t.dataset.ff){ S.feedFilter = t.dataset.ff; renderFeed(); return; }
+  if (t.dataset.card){ $("#"+t.dataset.card).classList.toggle("open"); return; }
+  if (t.dataset.openmap){ S.zone = t.dataset.openmap; S.sub=null;
+    const isSys = SYSTEMS.some(s=>s.id===S.zone);
+    if (isSys){ S.zone=null; S.zoom=1; } else { S.zoom=2; }
+    go("overview"); return; }
+  if (t.dataset.pr){ $$(".pr-tab").forEach(b=>b.classList.toggle("on", b.dataset.pr===t.dataset.pr));
+    $$(".pr-panel").forEach(p=>p.classList.toggle("on", p.dataset.pr===t.dataset.pr)); return; }
+  if (t.dataset.wbel){ S.element = t.dataset.wbel; renderWB(); return; }
+  if (t.dataset.crumbz){ const z=+t.dataset.crumbz;
+    const w=WB[S.element]; const sysEl = w.crumb[1]==="Shared systems";
+    if (z===1){ S.zoom=1; S.zone=null; S.sub=null; }
+    else if (sysEl){ S.zoom=1; S.zone=null; S.sub=null; }
+    else { S.zone="billing"; S.sub = z>=3 ? "Checkout: payment" : null; S.zoom=z; }
+    go("overview"); return; }
+  if (t.id==="agent-zoom-btn"){ $("#agent-detail").classList.toggle("open"); return; }
+  if (t.id==="wb-preview-btn"){ showPreview(); return; }
+  if (t.id==="wb-cancel"){ $("#wb-preview").classList.remove("open"); return; }
+  if (t.id==="wb-up"){ S.zoom=1; S.zone=null; S.sub=null; go("overview"); return; }
+  if (t.classList.contains("ann") && t.dataset.n){
+    const scr = t.closest(".screen"); if (!scr) return;
+    const note = scr.querySelector(`.notes li[data-n="${t.dataset.n}"]`);
+    if (note){ note.scrollIntoView({behavior:"smooth", block:"center"});
+      note.classList.add("flash"); setTimeout(()=>note.classList.remove("flash"), 1600); }
+  }
+});
+document.addEventListener("keydown", e => {
+  if (e.target.tagName==="INPUT") return;
+  const map = {"1":"overview","2":"lenses","3":"feed","4":"pr","5":"agent","6":"workbench"};
+  if (map[e.key]) go(map[e.key]);
+});
+
+/* PR default tab */
+$$(".pr-tab")[0].classList.add("on"); $$(".pr-panel")[0].classList.add("on");
+go("overview");
+</script>
+</body>
+</html>

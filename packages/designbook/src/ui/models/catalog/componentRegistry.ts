@@ -213,8 +213,29 @@ function registerResolvedComponent(
   if (name && !registryByName.has(name)) registryByName.set(name, entry);
 }
 
+/**
+ * Best-effort JSX name a lazy entry's component will render under, WITHOUT
+ * loading the module: an explicit `exportName` override wins, else the entry
+ * key (`resolveComponentExport` prefers the export matching the key, and glob
+ * entries conventionally export a component of that name).
+ */
+function lazyEntryName(entry: RegistryEntry): string | undefined {
+  return entry.exportName ?? entry.key ?? undefined;
+}
+
 for (const entry of registry) {
-  if (entry.component === undefined) continue; // lazy: registered post-load
+  if (entry.component === undefined) {
+    // Eager NAME registration for lazy entries: page-mode hit-testing runs
+    // over the LIVE app DOM, where a composite (e.g. the demo's ProductCard)
+    // renders before any canvas cell ever imports its module — without a name
+    // mapping the fiber walk resolves only its (statically registered) atoms.
+    // Registering the predicted name up front gives the entry an identity for
+    // `matchFiber`'s by-name fallback while the module itself STAYS lazy
+    // (code-splitting intact; byRef still registers post-load).
+    const name = lazyEntryName(entry);
+    if (name && !registryByName.has(name)) registryByName.set(name, entry);
+    continue; // lazy: registered by ref post-load
+  }
   if (!registryByRef.has(entry.component)) {
     registryByRef.set(entry.component, entry);
   }
@@ -257,6 +278,7 @@ export {
   getRegistryEntry,
   getSetEntries,
   getSetWrapper,
+  lazyEntryName,
   makeLazyComponent,
   registry,
   registryByName,

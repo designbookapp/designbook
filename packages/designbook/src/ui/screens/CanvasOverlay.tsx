@@ -38,6 +38,7 @@ import {
   registryByName,
   type RegistryEntry,
 } from "@designbook-ui/models/catalog/componentRegistry";
+import { resolveSourceOwner } from "@designbook-ui/models/sandbox/sourceOwner";
 import { useStageTransform, useStageElement } from "./stageContext";
 import { CanvasContextMenu } from "@designbook-ui/components/CanvasContextMenu";
 import type { CanvasCodeTarget } from "@designbook-ui/types";
@@ -80,6 +81,16 @@ type CanvasHitResult = {
    * and after a restore replay (the panel degrades to metadata-only).
    */
   fiber?: Fiber;
+  /**
+   * How `entry` was derived: "entry" (default, a registered component) or
+   * "source" — an UNREGISTERED authoring component resolved by the fiber
+   * owner walk (sandbox owner fallback; `entry` is then a synthesized
+   * entry-shaped identity with id "" and possibly sourcePath "").
+   */
+  ownerKind?: "entry" | "source";
+  /** Named-owner chain, nearest first (source owners only — the pin route
+   * resolves the file from it when sourcePath is ""). */
+  ownerNames?: string[];
 };
 
 /** Figma-style css-ish label for a hit: the component label, or
@@ -202,6 +213,7 @@ function CanvasOverlay({
   onRestoreConsumed,
   elementAtPoint,
   rectToScreen,
+  sourceOwnerFallback,
 }: {
   drillStack: CanvasHitResult[];
   onDrillChange: (stack: CanvasHitResult[]) => void;
@@ -228,6 +240,15 @@ function CanvasOverlay({
    * space). `AppFrameOverlay` supplies the frame-local → screen conversion.
    */
   rectToScreen?: (rect: ScreenBox) => ScreenBox;
+  /**
+   * Owner fallback for DOM OUTSIDE any registered component (sandbox element
+   * pins on page shells): when the chain is empty, a click selects the raw
+   * element with its source-resolved authoring component as the owner.
+   * Opt-in — ONLY the App-page frame sets it, where every element under the
+   * pointer belongs to the user's app; on the same-document canvas an empty
+   * chain means workbench chrome and must stay unselectable.
+   */
+  sourceOwnerFallback?: boolean;
 }) {
   const transform = useStageTransform();
   const stageEl = useStageElement();
@@ -366,6 +387,51 @@ function CanvasOverlay({
     };
   }
 
+  /**
+   * Owner-fallback hit for an element OUTSIDE any registered component
+   * (empty chain): the raw DOM element with its source-resolved authoring
+   * component synthesized as an entry-shaped owner (`ownerKind: "source"`,
+   * sourceOwner.ts) — the sandbox prompt box's identity for page shells.
+   * Undefined when the fallback is off (same-document canvas) or the element
+   * has no named authoring component.
+   */
+  function sourceFallbackHit(el: Element): CanvasHitResult | undefined {
+    if (!sourceOwnerFallback || !stageEl) return undefined;
+    const owner = resolveSourceOwner(el);
+    if (!owner) return undefined;
+    const tag = el.tagName.toLowerCase();
+    const rect = screenRectToStageRect(
+      toScreenBox(el.getBoundingClientRect()),
+      stageEl,
+      transform,
+    );
+    const entry: RegistryEntry = {
+      id: "",
+      name: owner.name,
+      label: owner.name,
+      sourcePath: owner.sourcePath,
+      component: undefined,
+      exportName: owner.exportName,
+      setId: "",
+      key: owner.exportName,
+    };
+    return {
+      entry,
+      ownerKind: "source",
+      ownerNames: owner.ownerNames,
+      rect,
+      instanceId: getDomInstanceId(el, `src:${owner.exportName}`),
+      kind: "dom",
+      name: tag,
+      dom: {
+        tag,
+        id: el.id || undefined,
+        classes: el.classList.length ? Array.from(el.classList) : undefined,
+      },
+      anchor: el,
+    };
+  }
+
   /** Rebuilds full drillStack entries from a resolved (outermost-first)
    * instanceId path, mapping each level back to its position on the chain's
    * *drillable* subsequence (skipped levels are never on a drill path). */
@@ -483,7 +549,12 @@ function CanvasOverlay({
           chain,
           drillStack.map((h) => h.instanceId),
         )?.index;
-    const hit = index !== undefined ? toCanvasHit(chain[index]) : undefined;
+    const hit =
+      index !== undefined
+        ? toCanvasHit(chain[index])
+        : chain.length === 0
+          ? sourceFallbackHit(target)
+          : undefined;
     const hitId = hit?.instanceId ?? "";
 
     if (hitId !== lastInstanceIdRef.current) {
@@ -553,6 +624,14 @@ function CanvasOverlay({
     }
 
     const chain = resolveChain(target);
+
+    // Owner fallback (empty chain — outside every registered component): the
+    // raw element with its source-resolved authoring component, when armed.
+    if (chain.length === 0) {
+      onSelect(sourceFallbackHit(target));
+      if (drillStack.length > 0) onDrillChange([]);
+      return;
+    }
 
     // Modifier+click: drill straight to the innermost component in one gesture.
     if (event.metaKey || event.ctrlKey) {

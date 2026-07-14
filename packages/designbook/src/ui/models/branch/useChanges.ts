@@ -15,6 +15,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { apiUrl } from "@designbook-ui/designbook";
+import { subscribeApiEvents } from "@designbook-ui/models/events/eventBus";
 import { onFileWritten } from "@designbook-ui/fileWriteBus";
 import type { FileChange } from "./changesModel";
 
@@ -51,8 +52,7 @@ function useChanges({ active }: { active: boolean }) {
 
   // Pi finished a turn — its edits are on disk now.
   useEffect(() => {
-    const eventSource = new EventSource(apiUrl("/api/events"));
-    eventSource.addEventListener("pi-event", (messageEvent) => {
+    return subscribeApiEvents("pi-event", (messageEvent) => {
       try {
         const event = JSON.parse(messageEvent.data as string) as {
           type?: string;
@@ -62,7 +62,6 @@ function useChanges({ active }: { active: boolean }) {
         // Ignore malformed events.
       }
     });
-    return () => eventSource.close();
   }, [refresh]);
 
   // designbook's own write actions announce themselves on the bus.

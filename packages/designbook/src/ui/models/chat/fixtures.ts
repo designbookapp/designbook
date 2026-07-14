@@ -40,12 +40,65 @@ const MODEL: ModelOption = {
   reasoning: true,
 };
 
+// A realistic turn: the user asks, the agent thinks + runs two tools (a run
+// that COALESCES into one collapsed "activity" row — 2 thinking entries + 2
+// tool calls, each resolved by a `toolResult`), then answers with text. Shapes
+// mirror the Pi transcript: assistant `thinking`/`toolCall` blocks + separate
+// `toolResult` messages carrying `toolCallId`/`isError`.
 const RAW_MESSAGES: RawAgentMessage[] = [
   { role: "user", content: "Tighten the product card spacing.", timestamp: 1 },
   {
     role: "assistant",
-    content: "On it — reducing the gap to 8px.",
     timestamp: 2,
+    content: [
+      {
+        type: "thinking",
+        thinking: "Let me find where the product card sets its gap.",
+      },
+      {
+        type: "toolCall",
+        id: "call-grep-1",
+        name: "bash",
+        arguments: { command: "rg -n 'ProductCard' src/composite" },
+      },
+    ],
+  },
+  {
+    role: "toolResult",
+    toolCallId: "call-grep-1",
+    toolName: "bash",
+    isError: false,
+    content: [{ type: "text", text: "Card.tsx:12: gap-4" }],
+    timestamp: 3,
+  },
+  {
+    role: "assistant",
+    timestamp: 4,
+    content: [
+      {
+        type: "thinking",
+        thinking: "It's `gap-4` (16px). I'll drop it to `gap-2` (8px).",
+      },
+      {
+        type: "toolCall",
+        id: "call-edit-1",
+        name: "edit",
+        arguments: { path: "src/composite/product/variants/Card.tsx" },
+      },
+    ],
+  },
+  {
+    role: "toolResult",
+    toolCallId: "call-edit-1",
+    toolName: "edit",
+    isError: false,
+    content: [{ type: "text", text: "Successfully replaced 1 block." }],
+    timestamp: 5,
+  },
+  {
+    role: "assistant",
+    content: "Done — reduced the product card gap to 8px.",
+    timestamp: 6,
   },
 ];
 

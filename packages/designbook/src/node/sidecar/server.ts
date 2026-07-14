@@ -31,8 +31,13 @@ import {
 } from "./hmrSuppress.ts";
 import { openBrowser } from "./openBrowser.ts";
 import { tailwindPlugins } from "../lib/tailwind.ts";
-import { variationsTailwindSourcePlugin } from "../lib/variationsTailwindSource.ts";
+import {
+  sandboxTailwindSourcePlugin,
+  variationsTailwindSourcePlugin,
+} from "../lib/variationsTailwindSource.ts";
 import { buildTailwindBridge, tailwindBridgePlugins } from "../lib/tailwindBridge.ts";
+import { wireGeneratedTailwindRefresh } from "../lib/generatedTailwindRefresh.ts";
+import { createSandboxOverridesVite } from "../plugin/sandboxOverridesVite.ts";
 import {
   filterInheritedPlugins,
   flattenPlugins,
@@ -185,6 +190,23 @@ async function startDesignbook(options: DesignbookServerOptions) {
     packageRoot,
     log: debugLog,
   });
+  // Sandbox overrides (O1): the vite ModuleOverrideHost for HOST MODE —
+  // same process as the api, so the orchestrator pushes the redirect table
+  // straight into the driver (no polling). Canvas cells importing an
+  // overridden app module resolve to its generated shim. The config module
+  // is excluded from hot pushes (same escalation hazard as injected mode).
+  const sandboxOverrides = createSandboxOverridesVite({
+    excludeHotFiles: [configPath],
+    // Same tailwind silent-full-reload hazard as injected mode (its watcher
+    // covers the generated dirs via wireGeneratedTailwindRefresh).
+    warmDirs: [
+      resolve(dirname(configPath), ".designbook/sandbox"),
+      // Changeset LAYER alternatives (mirrored-path files) get the same
+      // guard/warm treatment (docs/specs/changeset-layers.md, L1).
+      resolve(dirname(configPath), ".designbook/changesets"),
+    ],
+  });
+
   const suppressHmrPlugin: Plugin = {
     name: "designbook:suppress-managed-hmr",
     handleHotUpdate(ctx) {
@@ -284,8 +306,12 @@ async function startDesignbook(options: DesignbookServerOptions) {
         // generate (design-variations spec).
         // App-owned variations home (monorepo rule): <configDir>/.designbook.
         variationsTailwindSourcePlugin(dirname(configPath)),
+        // Same coverage for sandbox wrappers/variants (docs/specs/sandbox.md).
+        sandboxTailwindSourcePlugin(dirname(configPath)),
         ...tailwind,
         suppressHmrPlugin,
+        // Module→shim redirects for overridden app modules (sandbox O1).
+        sandboxOverrides.plugin,
         // Inherited (deny-filtered, deduped) repo plugins — e.g. Lingui catalog
         // loader, svgr.
         ...inheritedKept,
@@ -303,6 +329,21 @@ async function startDesignbook(options: DesignbookServerOptions) {
         `Original error: ${err instanceof Error ? err.stack ?? err.message : String(err)}`,
     );
   }
+
+  // Hot Tailwind for landed sandbox/variations files: NEW files under the
+  // generated dirs match no module-graph entry, so neither Vite nor
+  // @tailwindcss/vite reacts and the Tailwind entry css stays stale (even
+  // across reloads) until an unrelated edit. Watch the generated dirs (they
+  // sit outside this Vite's root — the packaged UI) and re-emit a `change` on
+  // the Tailwind entry css when files land: the exact native css hot-update
+  // path (style swap, no reload). See generatedTailwindRefresh.ts. Distinct
+  // from the recentWrites suppression above — adapter data writes stay
+  // suppressed; this reacts only to `.designbook/{sandbox,variations}` files.
+  const generatedRefresh = wireGeneratedTailwindRefresh(
+    vite,
+    dirname(configPath),
+    { log: debugLog },
+  );
 
   const api = createApi({
     configPath,
@@ -331,6 +372,11 @@ async function startDesignbook(options: DesignbookServerOptions) {
       // (or a manual reload) actually shows the new value.
       invalidateModulesForWrite(vite.moduleGraph, rel, projectRoot);
     },
+    // Sandbox overrides (O1), host-mode topology: the orchestrator pushes
+    // redirect-table changes (and content stamps — content-only
+    // re-projections hot-update too) straight into the vite override host.
+    onSandboxOverridesChanged: (redirects, stamps) =>
+      sandboxOverrides.apply(redirects, stamps),
   });
 
   server.on("request", (request, response) => {
@@ -410,6 +456,7 @@ async function startDesignbook(options: DesignbookServerOptions) {
   });
 
   async function shutdown() {
+    generatedRefresh.dispose();
     await api.shutdown();
     await vite.close();
     server.close();

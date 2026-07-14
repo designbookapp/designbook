@@ -45,6 +45,14 @@ type DesignbookResourceLoaderOptions = {
   settingsManager: SettingsManager;
   /** Override for tests (defaults to Pi's ~/.pi/agent). */
   agentDir?: string;
+  /**
+   * L3 (changeset layers §Bash): one extra APPEND-system block for
+   * CONVERSATION sessions — the "your file tools see the working state;
+   * bash sees the base tree" note. Rides the loader's own
+   * appendSystemPromptOverride seam; repo/user append files are untouched
+   * (the override receives them as `base`).
+   */
+  appendSystemNote?: string;
 };
 
 /**
@@ -58,12 +66,16 @@ async function createDesignbookResourceLoader(
   options: DesignbookResourceLoaderOptions,
 ): Promise<ResourceLoader | undefined> {
   const skillPaths = options.skillPaths.filter((dir) => existsSync(dir));
-  if (skillPaths.length === 0) return undefined;
+  const note = options.appendSystemNote;
+  if (skillPaths.length === 0 && !note) return undefined;
   const loader = new DefaultResourceLoader({
     cwd: options.cwd,
     agentDir: options.agentDir ?? getAgentDir(),
     settingsManager: options.settingsManager,
     additionalSkillPaths: skillPaths,
+    ...(note
+      ? { appendSystemPromptOverride: (base: string[]) => [...base, note] }
+      : {}),
   });
   await loader.reload();
   return loader;

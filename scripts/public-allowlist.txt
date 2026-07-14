@@ -1,0 +1,42 @@
+# Public-repo allowlist (DEFAULT-DENY).
+#
+# Each non-comment line is a git pathspec fed to `git archive HEAD`. Only what
+# is listed here ships to the public repo; anything NOT listed is invisible by
+# default — so a new internal file (docs/specs, marketing/, a scratch note)
+# NEVER leaks unless you deliberately add it here.
+#
+# `:(exclude)…` lines carve internal files back OUT of an otherwise-included dir.
+# Used by scripts/publish-public.sh. Edit this file, re-run the dry run, eyeball.
+
+# --- the package ----------------------------------------------------------
+packages/designbook
+
+# --- public docs (Astro site → docs.designbook.app) -----------------------
+docs-site
+
+# --- onboarding examples --------------------------------------------------
+# demo / i18n-app / init-app / tw4-app = clean onboarding apps.
+# mono-app = a nested monorepo FIXTURE (root workspace already ignores it) —
+# review whether it belongs in public; excluded below by default.
+examples
+
+# --- root meta ------------------------------------------------------------
+README.md
+LICENSE
+CHANGELOG.md
+CONTRIBUTING.md
+package.json
+pnpm-workspace.yaml
+pnpm-lock.yaml
+.gitignore
+.github
+
+# --- carve-outs (internal files under included dirs) ----------------------
+:(exclude)packages/designbook/figma-plugin/AUTH-NOTES.md
+:(exclude)examples/mono-app
+# dogfood (self-host showcase) cut until tidied up — Michael 2026-07-08.
+# NOTE: package.json still has a `dogfood` script pointing at the cut config;
+# trim that script in the public package.json when the cut is made permanent.
+:(exclude)packages/designbook/DOGFOOD.md
+:(exclude)packages/designbook/dogfood
+:(exclude)packages/designbook/designbook.config.tsx

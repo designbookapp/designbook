@@ -8,17 +8,21 @@
 
 import { describe, expect, it } from "vitest";
 import {
+  appendActivityEntry,
   buildPromptWithCanvasContext,
+  completeActivity,
   createChatModel,
   emptyThreadMarker,
   formatSelectionMarkerSummary,
   getModelValue,
-  getToolMarker,
   parseModelValue,
   toLiveMessage,
+  toToolEntry,
+  truncateThreadForViewing,
   upsertMarker,
   upsertMessage,
 } from "./chatModel";
+import type { DesignActivity, ThreadItem } from "./types";
 import { createChatFixture } from "./fixtures";
 import type { CanvasNodeSelection } from "@designbook-ui/types";
 
@@ -27,7 +31,9 @@ describe("createChatModel (fixture / data mode)", () => {
     const fx = createChatFixture();
     const model = createChatModel({ data: fx.data });
     expect(model.state?.sessionId).toBe("sess-1234abcd");
-    expect(model.threadItems).toHaveLength(2);
+    // user message → coalesced activity run → assistant reply.
+    expect(model.threadItems).toHaveLength(3);
+    expect(model.threadItems[1]).toMatchObject({ kind: "activity" });
     expect(model.getModelValue(fx.model)).toBe("anthropic:opus-4");
   });
 
@@ -71,15 +77,116 @@ describe("thread upserts", () => {
   });
 
   it("upserts markers by id", () => {
-    const running = getToolMarker({ toolName: "grep", toolCallId: "c1" }, "running");
+    const running = {
+      kind: "marker" as const,
+      id: "m1",
+      icon: "info" as const,
+      text: "one",
+    };
     let items = upsertMarker([emptyThreadMarker], running);
     expect(items).toEqual([running]);
-    expect(running.text).toBe("Running grep");
 
-    const done = getToolMarker({ toolName: "grep", toolCallId: "c1" }, "done");
-    items = upsertMarker(items, done);
-    expect(items).toEqual([done]);
-    expect(done.text).toBe("Completed grep");
+    const updated = { ...running, text: "two" };
+    items = upsertMarker(items, updated);
+    expect(items).toEqual([updated]);
+  });
+});
+
+describe("activity folds (live path)", () => {
+  it("creates a run on the first entry, dropping the empty-state marker", () => {
+    const items = appendActivityEntry(
+      [emptyThreadMarker],
+      { type: "thinking", text: "hmm " },
+      "a1",
+    );
+    expect(items).toEqual([
+      {
+        kind: "activity",
+        id: "a1",
+        entries: [{ type: "thinking", text: "hmm " }],
+        status: "running",
+      },
+    ]);
+  });
+
+  it("EXTENDS the last thinking entry across streamed deltas", () => {
+    let items = appendActivityEntry([], { type: "thinking", text: "one " }, "a1");
+    items = appendActivityEntry(items, { type: "thinking", text: "two" }, "a1");
+    const activity = items[0] as DesignActivity;
+    expect(activity.entries).toEqual([{ type: "thinking", text: "one two" }]);
+  });
+
+  it("starts a fresh thinking entry after a tool call", () => {
+    let items = appendActivityEntry([], { type: "thinking", text: "first" }, "a1");
+    items = appendActivityEntry(
+      items,
+      toToolEntry({ toolName: "grep", toolCallId: "c1" }, "running"),
+      "a1",
+    );
+    items = appendActivityEntry(items, { type: "thinking", text: "second" }, "a1");
+    const activity = items[0] as DesignActivity;
+    expect(activity.entries).toEqual([
+      { type: "thinking", text: "first" },
+      { type: "tool", id: "c1", name: "grep", status: "running" },
+      { type: "thinking", text: "second" },
+    ]);
+  });
+
+  it("UPSERTS a tool entry by id — start→end flips its status in place", () => {
+    let items = appendActivityEntry(
+      [],
+      toToolEntry({ toolName: "grep", toolCallId: "c1" }, "running"),
+      "a1",
+    );
+    items = appendActivityEntry(
+      items,
+      toToolEntry({ toolName: "grep", toolCallId: "c1", isError: false }, "done"),
+      "a1",
+    );
+    const activity = items[0] as DesignActivity;
+    expect(activity.entries).toEqual([
+      { type: "tool", id: "c1", name: "grep", status: "done" },
+    ]);
+  });
+
+  it("keeps the start event's detail when the arg-less end event upserts", () => {
+    let items = appendActivityEntry(
+      [],
+      toToolEntry(
+        {
+          toolName: "read",
+          toolCallId: "c1",
+          args: { path: "skills/figma-pull/SKILL.md" },
+        },
+        "running",
+      ),
+      "a1",
+    );
+    items = appendActivityEntry(
+      items,
+      toToolEntry({ toolName: "read", toolCallId: "c1", isError: false }, "done"),
+      "a1",
+    );
+    const activity = items[0] as DesignActivity;
+    expect(activity.entries).toEqual([
+      {
+        type: "tool",
+        id: "c1",
+        name: "read",
+        status: "done",
+        detail: "skills/figma-pull/SKILL.md",
+      },
+    ]);
+  });
+
+  it("completes (or errors) the run by id", () => {
+    const items = appendActivityEntry([], { type: "thinking", text: "x" }, "a1");
+    expect((completeActivity(items, "a1", "done")[0] as DesignActivity).status).toBe(
+      "done",
+    );
+    expect(
+      (completeActivity(items, "a1", "error")[0] as DesignActivity).status,
+    ).toBe("error");
   });
 });
 
@@ -176,5 +283,70 @@ describe("buildPromptWithCanvasContext", () => {
       `Selected canvas node context:\n${block}\n\nUser request:\nhi`,
     );
     expect(prompt).not.toContain("- Label:");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Chat time-travel under a park (history explorer).
+// ---------------------------------------------------------------------------
+
+describe("truncateThreadForViewing", () => {
+  const message = (id: string): ThreadItem => ({
+    kind: "message",
+    id,
+    role: "user",
+    text: id,
+    attachments: [],
+  });
+  const turnRow = (id: string, turn: string, changesetId: string): ThreadItem => ({
+    kind: "turn",
+    id,
+    turn,
+    changesetId,
+    ref: "refs/designbook/changesets/cs/trunk",
+    from: "a",
+    to: "b",
+    at: 1,
+    files: [],
+  });
+  const thread: ThreadItem[] = [
+    message("m1"),
+    turnRow("t1", "sess/1", "cs-a"),
+    message("m2"),
+    turnRow("t2", "sess/2", "cs-a"),
+    message("m3"),
+  ];
+
+  it("collapses everything after the parked turn's row behind ONE marker", () => {
+    const truncated = truncateThreadForViewing(thread, {
+      turn: "sess/1",
+      changesetId: "cs-a",
+    });
+    expect(truncated.map((item) => item.id)).toEqual([
+      "m1",
+      "t1",
+      "viewing-truncated",
+    ]);
+    const marker = truncated[2];
+    expect(marker.kind).toBe("marker");
+    expect((marker as { text: string }).text).toContain("3 later items");
+  });
+
+  it("parked on the LAST turn = nothing to hide", () => {
+    const tail: ThreadItem[] = [message("m1"), turnRow("t2", "sess/2", "cs-a")];
+    expect(
+      truncateThreadForViewing(tail, { turn: "sess/2", changesetId: "cs-a" }),
+    ).toBe(tail);
+  });
+
+  it("no park / unknown turn (pre-G4 record) = untouched thread", () => {
+    expect(truncateThreadForViewing(thread, undefined)).toBe(thread);
+    expect(
+      truncateThreadForViewing(thread, { turn: "sess/9", changesetId: "cs-a" }),
+    ).toBe(thread);
+    // A matching turn id on ANOTHER changeset never truncates this thread.
+    expect(
+      truncateThreadForViewing(thread, { turn: "sess/1", changesetId: "cs-b" }),
+    ).toBe(thread);
   });
 });

@@ -1,0 +1,21 @@
+{
+  "name": "web",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "dev:designbook": "vite --config vite.designbook.config.ts --port 3014",
+    "design": "designbook dev --port 8793 --target-cmd \"npm run dev:designbook\" --target-port 3014"
+  },
+  "dependencies": {
+    "@mono/ui": "workspace:*",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^5.0.0",
+    "@designbookapp/designbook": "link:../../../../packages/designbook",
+    "vite": "^7.0.0"
+  }
+}

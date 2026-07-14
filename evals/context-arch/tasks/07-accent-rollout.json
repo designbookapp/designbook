@@ -1,0 +1,104 @@
+{
+  "id": "07-accent-rollout",
+  "description": "LONG (18 turns): teal accent rollout across primitives, composites, header, pages and locales. Turn-1 standing constraint (never edit atoms.tsx) + an accent shade amended in turn 3 (teal-600 → teal-700, AA contrast). Later turns silently depend on the amended shade (turn 15) and the constraint (turns 11, 16). Mid-session why-probe (turn 9), original-copy recall (turn 17), full recap (turn 18). Mirrors real long sandbox sessions: canvas-node prompts, cross-file drips, reverts.",
+  "turns": [
+    {
+      "user": "Selected canvas node context:\n- Label: Primitives · Badge\n- Source path: src/components/ui/badge.tsx\n\nUser request:\nAdd a new `accent` variant to the badge cva: border-transparent bg-teal-600 text-white.\n\nIMPORTANT standing constraints for this WHOLE session: (1) never edit src/composite/product/atoms.tsx — wrapper-level changes only; (2) whatever teal shade we end up settling on for `accent` is THE accent shade for the session — reuse it anywhere I later ask for accent styling."
+    },
+    {
+      "user": "Selected canvas node context:\n- Label: Primitives · Button\n- Source path: src/components/ui/button.tsx\n\nUser request:\nAdd a matching `accent` variant to the button cva: bg-teal-600 text-white hover:bg-teal-700."
+    },
+    {
+      "user": "Design review came back: teal-600 fails AA contrast with white text at these sizes. Bump the accent to teal-700 in BOTH files (badge and button); button hover becomes hover:bg-teal-800. teal-700 is now our accent shade for the session.",
+      "note": "decision amendment — later turns must use teal-700"
+    },
+    {
+      "user": "Selected canvas node context:\n- Label: Primitives · Card\n- Source path: src/components/ui/card.tsx\n\nUser request:\nSoften the card silhouette: rounded-xl → rounded-2xl on the Card root. Leave everything else."
+    },
+    {
+      "user": "Selected canvas node context:\n- Label: Composite · ProductCard\n- Source path: src/composite/product/variants/Card.tsx\n\nUser request:\nGive the View trip button in the card footer our accent variant.",
+      "note": "silent dependency on turns 1-3 (accent variant exists)"
+    },
+    {
+      "user": "Selected canvas node context:\n- Label: Composite · ProductDetailSection\n- Source path: src/composite/product/variants/DetailSection.tsx\n\nUser request:\nSame for the Book now button here — accent variant."
+    },
+    {
+      "user": "Selected canvas node context:\n- Label: App header\n- Source path: src/components/AppHeader.tsx\n\nUser request:\nTighten the header a touch: py-4 → py-3 on the inner container."
+    },
+    {
+      "user": "Copy update across locales: change results.title in locales/en-US/app.json to exactly \"Handpicked trips\", in locales/es-419/app.json to exactly \"Viajes seleccionados\", and in locales/fr-FR/app.json to exactly \"Voyages sélectionnés\"."
+    },
+    {
+      "user": "Quick check before we keep going: why are we NOT on the teal shade we started with? One short sentence, no edits.",
+      "note": "mid-session decision-retention probe (turn-3 amendment)"
+    },
+    {
+      "user": "Selected canvas node context:\n- Label: Primitives · Skeleton\n- Source path: src/components/ui/skeleton.tsx\n\nUser request:\nMatch the skeleton to the softer card feel: rounded-md → rounded-lg."
+    },
+    {
+      "user": "Selected canvas node context:\n- Label: Composite · ProductCard\n- Source path: src/composite/product/variants/Card.tsx\n\nUser request:\nThe rating line on the card reads too subtle — make it font-medium. Remember the session constraints about where changes are allowed to live.",
+      "note": "tempts an atoms.tsx edit; must stay wrapper-level via className on ProductRating"
+    },
+    {
+      "user": "Without re-reading button.tsx, list every variant currently defined in its cva, comma-separated. No edits.",
+      "note": "memory probe over own earlier edits"
+    },
+    {
+      "user": "Selected canvas node context:\n- Label: Home page · Featured\n- Source path: src/pages/HomePage.tsx\n\nUser request:\nShow 4 featured trips instead of 3."
+    },
+    {
+      "user": "Selected canvas node context:\n- Label: Home page · Hero\n- Source path: src/pages/HomePage.tsx\n\nUser request:\nHero padding p-10 → p-8."
+    },
+    {
+      "user": "Selected canvas node context:\n- Label: App header\n- Source path: src/components/AppHeader.tsx\n\nUser request:\nThe ACTIVE locale pill currently uses bg-primary — switch it to our session accent background (keep text white via text-white instead of text-primary-foreground). Use the accent shade we settled on, from memory.",
+      "note": "late silent-dependency probe: must use teal-700, not teal-600 or a guess"
+    },
+    {
+      "user": "Which file did I forbid you to edit this whole session? One sentence, no edits.",
+      "note": "late constraint-retention probe (turn 1)"
+    },
+    {
+      "user": "What was the ORIGINAL English results.title before we changed it? Quote it exactly — do not re-read anything.",
+      "note": "long-range recall of turn-8 file content"
+    },
+    {
+      "user": "Final recap, from memory only (no re-reads): list every file we MODIFIED this session, one line each saying what changed. If we only read a file, say read-only. Don't invent edits we didn't make.",
+      "note": "whole-session recap probe"
+    }
+  ],
+  "checks": [
+    { "type": "file_unchanged", "file": "src/composite/product/atoms.tsx" },
+    { "type": "file_contains", "file": "src/components/ui/badge.tsx", "pattern": "accent[\\s\\S]{0,120}bg-teal-700" },
+    { "type": "file_not_contains", "file": "src/components/ui/badge.tsx", "pattern": "bg-teal-600" },
+    { "type": "file_contains", "file": "src/components/ui/button.tsx", "pattern": "accent[\\s\\S]{0,160}bg-teal-700" },
+    { "type": "file_not_contains", "file": "src/components/ui/button.tsx", "pattern": "bg-teal-600" },
+    { "type": "file_contains", "file": "src/components/ui/card.tsx", "pattern": "rounded-2xl" },
+    { "type": "file_contains", "file": "src/composite/product/variants/Card.tsx", "pattern": "variant=\"accent\"" },
+    { "type": "file_contains", "file": "src/composite/product/variants/Card.tsx", "pattern": "ProductRating[^/>]*font-medium" },
+    { "type": "file_contains", "file": "src/composite/product/variants/DetailSection.tsx", "pattern": "accent[\\s\\S]{0,120}bookNow" },
+    { "type": "file_contains", "file": "src/components/AppHeader.tsx", "pattern": "py-3" },
+    { "type": "file_contains", "file": "src/components/AppHeader.tsx", "pattern": "bg-teal-700" },
+    { "type": "file_not_contains", "file": "src/components/AppHeader.tsx", "pattern": "bg-teal-600" },
+    { "type": "file_contains", "file": "src/components/ui/skeleton.tsx", "pattern": "rounded-lg" },
+    { "type": "file_contains", "file": "src/pages/HomePage.tsx", "pattern": "slice\\(0,\\s*4\\)" },
+    { "type": "file_contains", "file": "src/pages/HomePage.tsx", "pattern": "p-8" },
+    { "type": "file_contains", "file": "locales/en-US/app.json", "pattern": "Handpicked trips" },
+    { "type": "file_not_contains", "file": "locales/en-US/app.json", "pattern": "Trips for you" },
+    { "type": "file_contains", "file": "locales/es-419/app.json", "pattern": "Viajes seleccionados" },
+    { "type": "file_contains", "file": "locales/fr-FR/app.json", "pattern": "Voyages sélectionnés" },
+    { "type": "final_response_matches", "turn": 8, "pattern": "(AA|contrast)" },
+    { "type": "final_response_matches", "turn": 11, "pattern": "accent" },
+    { "type": "final_response_matches", "turn": 11, "pattern": "ghost" },
+    { "type": "final_response_matches", "turn": 15, "pattern": "atoms\\.tsx" },
+    { "type": "final_response_matches", "turn": 16, "pattern": "Trips for you" },
+    { "type": "final_response_matches", "turn": 17, "pattern": "badge\\.tsx" },
+    { "type": "final_response_matches", "turn": 17, "pattern": "skeleton\\.tsx" },
+    { "type": "final_response_matches", "turn": 17, "pattern": "AppHeader" },
+    { "type": "max_reads", "file": "badge.tsx", "max": 3 },
+    { "type": "max_reads", "file": "button.tsx", "max": 3 },
+    { "type": "max_reads", "file": "AppHeader.tsx", "max": 3 },
+    { "type": "max_reads", "file": "HomePage.tsx", "max": 2 },
+    { "type": "max_reads", "file": "en-US/app.json", "max": 2 }
+  ],
+  "judgeRubric": "18-turn session. Turn 1 set two standing constraints: never edit atoms.tsx (wrapper-level only) and reuse the session accent shade wherever accent styling is requested. Turn 3 AMENDED the accent from teal-600 to teal-700 (reason: AA contrast). Later accent requests (turns 5, 6, 15) must use the amended teal-700 without being told the value again; turn 15 explicitly says 'from memory'. Turn 9 must attribute the shade change to the AA/contrast review. Turn 11 tempts an atoms.tsx edit (rating styling) — must stay in variants/Card.tsx. Turn 12 must list button variants (default, secondary, outline, destructive, ghost, link, accent) without re-reading. Turn 16 must name atoms.tsx. Turn 17 must quote 'Trips for you'. Turn 18's recap must list the actually-modified files (badge, button, card, variants/Card, DetailSection, AppHeader, skeleton, HomePage, 3 locale app.json files) and must not claim edits to atoms.tsx or files never touched. Flag redid_work if the agent re-read files it had just edited to recover its own changes, re-derived the accent value from disk instead of memory, or re-did completed edits. Flag contradicted_earlier_decision if teal-600 reappears anywhere after turn 3, atoms.tsx is edited or proposed for editing, or the recap/answers misstate earlier decisions."
+}

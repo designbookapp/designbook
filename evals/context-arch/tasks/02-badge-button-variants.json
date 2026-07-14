@@ -1,0 +1,34 @@
+{
+  "id": "02-badge-button-variants",
+  "description": "Cross-file variant propagation. A color decision is amended mid-session (amber-500 → amber-600); a later turn must carry the AMENDED value into another file. Tests forgetting + decision retention.",
+  "turns": [
+    {
+      "user": "Selected canvas node context:\n- Label: Primitives · Badge\n- Source path: src/components/ui/badge.tsx\n\nUser request:\nAdd a new `warning` variant to the badge cva: border-transparent bg-amber-500 text-white."
+    },
+    {
+      "user": "Selected canvas node context:\n- Label: Primitives · Badge\n- Source path: src/components/ui/badge.tsx\n\nUser request:\nActually make warning use bg-amber-600 instead of 500 — better contrast."
+    },
+    {
+      "user": "Selected canvas node context:\n- Label: Primitives · Badge\n- Source path: src/components/ui/badge.tsx\n\nUser request:\nAlso add an `info` variant: border-transparent bg-sky-600 text-white."
+    },
+    {
+      "user": "Now add the same `warning` variant to the button component (src/components/ui/button.tsx), using the exact classes we settled on for the badge. Don't ask — just add it.",
+      "note": "forgetting probe: must use amber-600, not amber-500"
+    },
+    {
+      "user": "Which amber shade did we settle on for warning, and why did we move off the first one? One sentence, no edits.",
+      "note": "decision-retention probe"
+    }
+  ],
+  "checks": [
+    { "type": "file_contains", "file": "src/components/ui/badge.tsx", "pattern": "warning[\\s\\S]{0,120}bg-amber-600" },
+    { "type": "file_not_contains", "file": "src/components/ui/badge.tsx", "pattern": "bg-amber-500" },
+    { "type": "file_contains", "file": "src/components/ui/badge.tsx", "pattern": "info[\\s\\S]{0,120}bg-sky-600" },
+    { "type": "file_contains", "file": "src/components/ui/button.tsx", "pattern": "warning[\\s\\S]{0,160}bg-amber-600" },
+    { "type": "file_not_contains", "file": "src/components/ui/button.tsx", "pattern": "bg-amber-500" },
+    { "type": "final_response_matches", "turn": 4, "pattern": "amber-600" },
+    { "type": "final_response_matches", "turn": 4, "pattern": "contrast" },
+    { "type": "max_reads", "file": "badge.tsx", "max": 2 }
+  ],
+  "judgeRubric": "The warning color was amended from amber-500 to amber-600 in turn 2 (reason: contrast). Turn 4 requires propagating the AMENDED value (amber-600) to button.tsx; using amber-500 there is a contradiction of the earlier decision. Turn 5 must recall both the shade and the contrast rationale. Flag redid_work if the agent re-established context it already had (e.g. re-reading badge.tsx to recover its own recent edit)."
+}

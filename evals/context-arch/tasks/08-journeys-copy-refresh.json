@@ -1,0 +1,94 @@
+{
+  "id": "08-journeys-copy-refresh",
+  "description": "LONG (17 turns): trip-detail refresh + brand-voice copy campaign. Turn-1 copy rules (say 'journey' not 'trip' in new copy; no exclamation marks) that later free-copy turns silently depend on (turns 12, 13). Swap-then-revert layout decision (turns 6-7) probed at turn 9. Locale-key recall (turn 15), rules recall (turn 16), full recap (turn 17). Read-only files (card.tsx, atoms.tsx) are hard integrity checks.",
+  "turns": [
+    {
+      "user": "Read src/pages/TripDetailPage.tsx and src/composite/product/variants/DetailSection.tsx and tell me briefly how the trip detail page is composed. Do NOT edit anything yet.\n\nSession copy rules from here on, for ALL new user-facing copy we write: (1) we say \"journey\"/\"journeys\" instead of \"trip\"/\"trips\"; (2) never use exclamation marks; (3) sentence case."
+    },
+    {
+      "user": "In locales/en-US/app.json, change detail.backToTrips to exactly: \"Back to all journeys\"."
+    },
+    {
+      "user": "Also in en-US, change detail.notFound to exactly: \"That journey has ended — we couldn't find it.\""
+    },
+    {
+      "user": "Give locales/es-419/app.json and locales/fr-FR/app.json natural translations of those two new detail strings (backToTrips and notFound)."
+    },
+    {
+      "user": "Selected canvas node context:\n- Label: Composite · ProductDetailSection\n- Source path: src/composite/product/variants/DetailSection.tsx\n\nUser request:\nGive the comfortable density branch more air: p-6 → p-8. Leave the compact branch at p-4."
+    },
+    {
+      "user": "Selected canvas node context:\n- Label: Composite · ProductDetailSection\n- Source path: src/composite/product/variants/DetailSection.tsx\n\nUser request:\nOn the meta row, put ProductDuration BEFORE ProductRating."
+    },
+    {
+      "user": "Selected canvas node context:\n- Label: Composite · ProductDetailSection\n- Source path: src/composite/product/variants/DetailSection.tsx\n\nUser request:\nMy mistake — swap them back, rating first. While you're there, give ProductDuration className text-xs.",
+      "note": "reverted decision — probed at turn 9"
+    },
+    {
+      "user": "Selected canvas node context:\n- Label: Trip detail page\n- Source path: src/pages/TripDetailPage.tsx\n\nUser request:\nOn the found-trip branch, bump the outer column gap-4 → gap-6."
+    },
+    {
+      "user": "Remind me what happened with the rating/duration order on the detail section — why is it rating-first now? One sentence, no edits.",
+      "note": "mid-session probe on the turn 6-7 swap+revert"
+    },
+    {
+      "user": "Selected canvas node context:\n- Label: Home page · Hero\n- Source path: src/pages/HomePage.tsx\n\nUser request:\nAdd an eyebrow line above the hero title: a <p className=\"text-sm font-medium text-primary\"> using t(\"home.heroEyebrow\"). Then add home.heroEyebrow to locales/en-US/app.json with exactly: \"Journeys, not itineraries\"."
+    },
+    {
+      "user": "Add natural es-419 and fr-FR translations for home.heroEyebrow too."
+    },
+    {
+      "user": "Add a new en-US key detail.urgency — a short one-line urgency note about limited seats on popular departures. YOU write the copy; follow our session copy rules.",
+      "note": "silent dependency: no exclamation mark, sentence case, journey-not-trip wording"
+    },
+    {
+      "user": "Also rewrite the en-US results.count strings (count_one / count_other) to match our session terminology.",
+      "note": "silent dependency on the turn-1 journey rule"
+    },
+    {
+      "user": "Selected canvas node context:\n- Label: Composite · ProductDetailSection\n- Source path: src/composite/product/variants/DetailSection.tsx\n\nUser request:\nSurface that urgency line: under the operatedBy paragraph, add <p className=\"mt-1 text-xs font-medium text-primary\">{t(\"detail.urgency\")}</p>."
+    },
+    {
+      "user": "From memory, no re-reads: list the en-US locale keys we added or changed this session as dot-paths, comma-separated.",
+      "note": "locale-state recall probe"
+    },
+    {
+      "user": "What copy rules did I set at the start of this session? One sentence.",
+      "note": "late constraint-retention probe (turn 1)"
+    },
+    {
+      "user": "Final recap, from memory only (no re-reads): list every file we MODIFIED this session with a one-line summary each. If a file was only read, say read-only. Don't claim edits we didn't make.",
+      "note": "whole-session recap probe"
+    }
+  ],
+  "checks": [
+    { "type": "file_unchanged", "file": "src/composite/product/atoms.tsx" },
+    { "type": "file_unchanged", "file": "src/components/ui/card.tsx" },
+    { "type": "file_contains", "file": "locales/en-US/app.json", "pattern": "Back to all journeys" },
+    { "type": "file_not_contains", "file": "locales/en-US/app.json", "pattern": "Back to trips" },
+    { "type": "file_contains", "file": "locales/en-US/app.json", "pattern": "That journey has ended" },
+    { "type": "file_contains", "file": "locales/en-US/app.json", "pattern": "Journeys, not itineraries" },
+    { "type": "file_contains", "file": "locales/en-US/app.json", "pattern": "\"count_other\"\\s*:\\s*\"\\{\\{count\\}\\} journeys\"" },
+    { "type": "file_contains", "file": "locales/en-US/app.json", "pattern": "\"urgency\"\\s*:" },
+    { "type": "file_not_contains", "file": "locales/en-US/app.json", "pattern": "\"urgency\"\\s*:\\s*\"[^\"]*!" },
+    { "type": "file_contains", "file": "locales/es-419/app.json", "pattern": "heroEyebrow" },
+    { "type": "file_contains", "file": "locales/fr-FR/app.json", "pattern": "heroEyebrow" },
+    { "type": "file_contains", "file": "src/composite/product/variants/DetailSection.tsx", "pattern": "bg-card p-8" },
+    { "type": "file_contains", "file": "src/composite/product/variants/DetailSection.tsx", "pattern": "ProductRating[\\s\\S]{0,160}ProductDuration[^/>]*text-xs" },
+    { "type": "file_contains", "file": "src/composite/product/variants/DetailSection.tsx", "pattern": "detail\\.urgency" },
+    { "type": "file_contains", "file": "src/pages/TripDetailPage.tsx", "pattern": "items-start gap-6" },
+    { "type": "file_contains", "file": "src/pages/HomePage.tsx", "pattern": "heroEyebrow" },
+    { "type": "final_response_matches", "turn": 8, "pattern": "(swap|revert|back|mistake|switch|order)" },
+    { "type": "final_response_matches", "turn": 14, "pattern": "heroEyebrow" },
+    { "type": "final_response_matches", "turn": 14, "pattern": "urgency" },
+    { "type": "final_response_matches", "turn": 14, "pattern": "backToTrips" },
+    { "type": "final_response_matches", "turn": 15, "pattern": "(journey|exclamation)" },
+    { "type": "final_response_matches", "turn": 16, "pattern": "DetailSection" },
+    { "type": "final_response_matches", "turn": 16, "pattern": "HomePage" },
+    { "type": "max_reads", "file": "DetailSection.tsx", "max": 4 },
+    { "type": "max_reads", "file": "TripDetailPage.tsx", "max": 2 },
+    { "type": "max_reads", "file": "HomePage.tsx", "max": 2 },
+    { "type": "max_reads", "file": "en-US/app.json", "max": 4 }
+  ],
+  "judgeRubric": "17-turn session. Turn 1 (read-only) set copy rules for all NEW copy: journey(s) not trip(s), no exclamation marks, sentence case. Turns 6-7: meta row swapped to duration-first then reverted to rating-first (user's mistake) with duration getting text-xs. Turn 9 must attribute rating-first to the user's swap+revert. Turn 12's self-written urgency copy must follow the rules (no '!', sentence case). Turn 13 must rewrite count strings using 'journey'/'journeys' without the rule being restated. Turn 15's answer must list the changed en-US keys (detail.backToTrips, detail.notFound, home.heroEyebrow, detail.urgency, results.count_*). Turn 16 must recall the copy rules. Turn 17's recap must list the actually-modified files (3 locale app.json files, DetailSection.tsx, TripDetailPage.tsx, HomePage.tsx) and must mark TripDetailPage as modified (gap-6) while NOT claiming edits to card.tsx or atoms.tsx. Flag redid_work if the agent re-read files against explicit instructions or re-derived state it should have retained (e.g. re-reading en-US/app.json to answer turn 15). Flag contradicted_earlier_decision if new copy uses 'trip(s)' or exclamation marks after turn 1, the meta row ends duration-first, or the recap misstates what changed."
+}
