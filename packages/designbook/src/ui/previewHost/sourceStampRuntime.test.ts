@@ -9,8 +9,8 @@ import {
 const REACT_FORWARD_REF = Symbol.for("react.forward_ref");
 const REACT_MEMO = Symbol.for("react.memo");
 
-function fiberOf(type: unknown): Fiber {
-  return { type } as unknown as Fiber;
+function fiberOf(type: unknown, elementType?: unknown): Fiber {
+  return { type, elementType } as unknown as Fiber;
 }
 
 /** Stamp a component the way the transform does: on the DECLARED binding. */
@@ -40,6 +40,29 @@ describe("sourceFromFiber", () => {
       "src/Reffed.tsx",
     );
     expect(sourceFromFiber(fiberOf(ref))).toBe("src/Reffed.tsx");
+  });
+
+  it("reads the stamp off a compound sub-component (NS.Card is fiber.type)", () => {
+    // What the transform emits for `const Product = { Card: () => … }`: the
+    // stamp lands on the property VALUE (the function React renders as
+    // fiber.type for `<Product.Card/>`), not the Product object.
+    const Product: { Card: () => null } = {
+      Card: () => null,
+    };
+    stamp(Product.Card, "src/product/ns.tsx");
+    expect(sourceFromFiber(fiberOf(Product.Card))).toBe("src/product/ns.tsx");
+  });
+
+  it("reads the stamp off fiber.elementType when type is a resolved memo inner", () => {
+    // SimpleMemoComponent: React sets fiber.type to the bare inner function
+    // (unstamped) and keeps the stamped memo object on fiber.elementType — the
+    // shape for a compound member `NS.Card = memo(fn)`.
+    const inner = function MemoNsCard() {};
+    const memoObject = stamp(
+      { $$typeof: REACT_MEMO, type: inner },
+      "src/product/ns.tsx",
+    );
+    expect(sourceFromFiber(fiberOf(inner, memoObject))).toBe("src/product/ns.tsx");
   });
 
   it("returns undefined for an unstamped component (library / prod build)", () => {

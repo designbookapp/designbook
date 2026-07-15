@@ -28,6 +28,14 @@ function isElementNode(value: unknown): value is Element {
 type Fiber = {
   tag: number;
   type: unknown;
+  /**
+   * The ORIGINAL element type before React resolves wrappers. For a
+   * SimpleMemoComponent (`memo(fn)` with no custom comparator) React sets
+   * `type` to the INNER function but keeps the memo object here — so a stamp
+   * that landed on the memo object (e.g. a compound member `NS.Card = memo(…)`)
+   * is readable off `elementType` even though `type` is the bare inner fn.
+   */
+  elementType?: unknown;
   stateNode: unknown;
   return: Fiber | null;
   child: Fiber | null;
@@ -94,24 +102,30 @@ function unwrapType(type: unknown): { ref: unknown; name: string } {
  * (sourceStamp.ts): `fiber.type.__dbSource`. The stamp lands on the DECLARED
  * binding object, which React uses verbatim as `fiber.type` — so a direct read
  * is correct for a plain function, and for memo/forwardRef the stamp is on the
- * wrapper object (again `fiber.type`). The unwrapped inner function is checked
- * too as a belt-and-suspenders. Undefined for library components (no designbook
- * transform → no stamp; name-index resolution takes over) and prod builds.
+ * wrapper object. The unwrapped inner function is checked too as a
+ * belt-and-suspenders. `fiber.elementType` is checked LAST: React resolves a
+ * SimpleMemoComponent's `type` to the bare inner function, so a stamp on the
+ * memo object (a compound member `NS.Card = memo(…)`, whose object React uses
+ * as `elementType`) is only reachable there. Undefined for library components
+ * (no designbook transform → no stamp; name-index takes over) and prod builds.
  */
-function sourceFromFiber(fiber: Fiber): string | undefined {
-  const type = fiber.type;
-  if (type == null || (typeof type !== "function" && typeof type !== "object")) {
+function readDbSource(value: unknown): string | undefined {
+  if (value == null || (typeof value !== "function" && typeof value !== "object")) {
     return undefined;
   }
+  const direct = (value as { __dbSource?: unknown }).__dbSource;
+  if (typeof direct === "string" && direct) return direct;
+  const { ref } = unwrapType(value);
+  const inner =
+    ref && (typeof ref === "function" || typeof ref === "object")
+      ? (ref as { __dbSource?: unknown }).__dbSource
+      : undefined;
+  return typeof inner === "string" && inner ? inner : undefined;
+}
+
+function sourceFromFiber(fiber: Fiber): string | undefined {
   try {
-    const direct = (type as { __dbSource?: unknown }).__dbSource;
-    if (typeof direct === "string" && direct) return direct;
-    const { ref } = unwrapType(type);
-    const inner =
-      ref && (typeof ref === "function" || typeof ref === "object")
-        ? (ref as { __dbSource?: unknown }).__dbSource
-        : undefined;
-    return typeof inner === "string" && inner ? inner : undefined;
+    return readDbSource(fiber.type) ?? readDbSource(fiber.elementType);
   } catch {
     return undefined;
   }
