@@ -13,6 +13,7 @@ import {
   getAnchorElement,
   getFiberFromDom,
   getFiberProps,
+  sourceFromFiber,
   unwrapType,
   type ContextScopeEntry,
   type Fiber,
@@ -170,6 +171,7 @@ type PinContextEntry = ContextScopeEntry & {
 function providerComponentOf(providerFiber: Fiber): {
   providerName?: string;
   providerProps?: Record<string, unknown>;
+  providerSource?: string;
 } {
   try {
     let owner: unknown = providerFiber._debugOwner;
@@ -183,6 +185,9 @@ function providerComponentOf(providerFiber: Fiber): {
           return {
             providerName: name,
             providerProps: getFiberProps(ownerFiber),
+            // Exact definition file of the provider component (name-collision-
+            // proof) — the wrapper generator imports the provider from here.
+            providerSource: sourceFromFiber(ownerFiber),
           };
         }
       }
@@ -221,19 +226,25 @@ function pinContextScope(
     }
     if (providers.length !== entries.length) return entries; // drifted — keep as-is
     return entries.map((entry, index) => {
-      const attribution = providerComponentOf(providers[index].fiber);
+      const { providerSource, ...attribution } = providerComponentOf(
+        providers[index].fiber,
+      );
+      // Prefer the provider's exact `__dbSource` stamp (definitive, collision-
+      // proof). Else fall back to the registry-attributed file, but only when
+      // it belongs to the SAME component we extracted props from (the owner
+      // walk may have matched a registered component deeper in the chain).
+      const providerFile =
+        providerSource ??
+        (attribution.providerName &&
+        entry.ownerFile &&
+        entry.ownerName === attribution.providerName
+          ? entry.ownerFile
+          : undefined);
       return {
         ...entry,
         consumed: entry.consumed || consumed.has(providers[index].context),
         ...attribution,
-        // Only trust the registry-attributed file when it belongs to the SAME
-        // component we extracted props from (the owner walk may have matched
-        // a registered component deeper in the chain).
-        ...(attribution.providerName &&
-        entry.ownerFile &&
-        entry.ownerName === attribution.providerName
-          ? { providerFile: entry.ownerFile }
-          : {}),
+        ...(providerFile ? { providerFile } : {}),
       };
     });
   } catch {

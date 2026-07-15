@@ -289,7 +289,6 @@ type ExportIndexFiles = Record<string, string[]>;
 
 /** Names currently registered from the index (for re-sync removal). */
 const indexRegisteredNames = new Map<string, RegistryEntry>();
-const ambiguityLogged = new Set<string>();
 
 /** Synthesized entry id for an index-backed component. */
 function indexEntryId(file: string, name: string): string {
@@ -299,8 +298,15 @@ function indexEntryId(file: string, name: string): string {
 /**
  * (Re)build the index-backed slice of `registryByName` from a snapshot.
  * Deterministic: files sorted, first file wins `sourcePath`; a name exported
- * from several files keeps the full candidate list and logs once (the
- * node-side ladder disambiguates by owner-chain proximity on pin/edit).
+ * from several files keeps the full candidate list as SILENT fallback data.
+ *
+ * No ambiguity warning: with transform-time source stamping (sourceStamp.ts)
+ * the runtime resolves each fiber to its EXACT definition file off
+ * `fiber.type.__dbSource`, so genuinely-distinct same-name components (every
+ * `index.tsx` wrapper pattern makes one) resolve precisely — the name-index
+ * candidate list is only a fallback for unstamped (library) components and no
+ * longer drives resolution, so a same-name collision is not a problem to warn
+ * about.
  */
 function applyExportIndexToRegistry(files: ExportIndexFiles): void {
   const byName = new Map<string, string[]>();
@@ -326,12 +332,10 @@ function applyExportIndexToRegistry(files: ExportIndexFiles): void {
     const existing = registryByName.get(name);
     const previous = indexRegisteredNames.get(name);
     if (existing && existing !== previous) continue; // config sets win
-    if (candidates.length > 1 && !ambiguityLogged.has(name)) {
-      ambiguityLogged.add(name);
-      console.warn(
-        `[designbook] export index: component "${name}" is exported from ${candidates.length} files (${candidates.join(", ")}); using ${candidates[0]} for display — pins re-resolve the file server-side.`,
-      );
-    }
+    // Multiple candidates are legitimate (barrels, same-name twins) and resolve
+    // exactly at runtime via the fiber stamp — keep the full list as silent
+    // fallback data; `sourcePath` (first file) is only the display default for
+    // an unstamped selection.
     const sourcePath = candidates[0];
     if (
       previous &&

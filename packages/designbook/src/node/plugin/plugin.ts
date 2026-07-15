@@ -54,6 +54,8 @@ import {
   isIndexableModuleId,
   scanComponentExports,
 } from "./exportIndex.ts";
+import { buildSourceStampSuffix } from "./sourceStamp.ts";
+import MagicString from "magic-string";
 
 /** dist/node/plugin.js → package root (dist/ui and dist/node live under it). */
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
@@ -762,6 +764,27 @@ function designbookPlugin(options: DesignbookPluginOptions = {}): Plugin[] {
     }
   }
 
+  /**
+   * Exact-source stamp suffix for a client-graph module (or "" when the module
+   * isn't app code or declares no component). Gated by the SAME
+   * `isIndexableModuleId` predicate as the export index — the runtime reads the
+   * stamp back off `fiber.type.__dbSource` for pin/code-panel/capture file
+   * resolution (see sourceStamp.ts). Dev-only via the plugin's `apply: "serve"`.
+   */
+  function sourceStampFor(code: string, id: string): string {
+    if (
+      !isIndexableModuleId(id, {
+        projectRoot: projectRootPosix,
+        packageRoot: packageRootPosix,
+        configPath: configPathPosix,
+      })
+    ) {
+      return "";
+    }
+    const repoRel = toPosix(id.split("?")[0]).slice(projectRootPosix.length + 1);
+    return buildSourceStampSuffix(code, repoRel);
+  }
+
   // Cross-process write-suppression: the sidecar (a SEPARATE process) owns the
   // record of paths designbook just wrote. We poll it and drop the matching
   // hot updates in this (the target app's) Vite so an adapter-managed write
@@ -1030,9 +1053,29 @@ function designbookPlugin(options: DesignbookPluginOptions = {}): Plugin[] {
         // lowered ESM keeps every `export` form textual). Independent of the
         // page-text option — the index is what hit-testing runs on.
         maybeIndexExports(code, id);
-        if (!shouldTransformPageText(id)) return undefined;
-        const result = transformPageText(code, id);
-        return result ?? undefined;
+        // Exact-source stamp: append `X.__dbSource = "<file>"` for each declared
+        // component so the runtime resolves the exact definition file off the
+        // fiber (name-collision-proof). Detected on the ORIGINAL code; appended
+        // AFTER any page-text rewrite (both are additive — page-text wraps
+        // in-body `t(...)` calls / prepends an import, the stamp appends at EOF).
+        const stamp = sourceStampFor(code, id);
+        const pageText = shouldTransformPageText(id)
+          ? transformPageText(code, id)
+          : null;
+        if (pageText) {
+          // Stamp lines land past the mapped region (EOF), so the page-text map
+          // stays valid without regeneration.
+          return stamp ? { code: pageText.code + stamp, map: pageText.map } : pageText;
+        }
+        if (stamp) {
+          const magic = new MagicString(code);
+          magic.append(stamp);
+          return {
+            code: magic.toString(),
+            map: magic.generateMap({ source: id, hires: true }),
+          };
+        }
+        return undefined;
       },
     },
     transformIndexHtml() {

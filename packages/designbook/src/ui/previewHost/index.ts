@@ -49,6 +49,7 @@ export {
   hitTest,
   hitTestChain,
   isElementNode,
+  sourceFromFiber,
   unionRects,
   unwrapType,
 } from "./fibers";

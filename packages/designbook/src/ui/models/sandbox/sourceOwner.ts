@@ -23,6 +23,7 @@
 
 import {
   getFiberFromDom,
+  sourceFromFiber,
   unwrapType,
   type Fiber,
 } from "@designbook-ui/previewHost";
@@ -46,8 +47,9 @@ type SourceOwner = {
   ownerNames: string[];
 };
 
-/** A named function/class component candidate on the owner chain. */
-type OwnerCandidate = { name: string; ref: unknown };
+/** A named function/class component candidate on the owner chain. `source` is
+ * the exact `__dbSource` stamp when the fiber carries one (definitive file). */
+type OwnerCandidate = { name: string; ref: unknown; source?: string };
 
 function candidateOf(fiber: Fiber): OwnerCandidate | undefined {
   if (typeof fiber.type !== "function" && typeof fiber.type !== "object") {
@@ -57,7 +59,7 @@ function candidateOf(fiber: Fiber): OwnerCandidate | undefined {
     const { ref, name } = unwrapType(fiber.type);
     // Providers/fragments/anonymous wrappers unwrap to no name — skip, the
     // same visibility rule the hit-test chain applies.
-    return name ? { name, ref } : undefined;
+    return name ? { name, ref, source: sourceFromFiber(fiber) } : undefined;
   } catch {
     return undefined;
   }
@@ -106,7 +108,9 @@ function sourceOwnerFromFiber(
   const resolved = candidates
     .map((candidate) => ({
       ...candidate,
-      sourcePath: sourcePathOf(candidate.ref) ?? "",
+      // The exact stamp wins over the name→file glob lookup (which can't
+      // disambiguate same-name components); fall back to the glob when unstamped.
+      sourcePath: candidate.source ?? sourcePathOf(candidate.ref) ?? "",
     }))
     .find((candidate) => candidate.sourcePath);
   const owner = resolved ?? { ...candidates[0], sourcePath: "" };

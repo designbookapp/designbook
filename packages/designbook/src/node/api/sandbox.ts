@@ -1101,18 +1101,14 @@ function makeExportResolver(repoRoot: string, appDir: string) {
       const hinted = await sourceOf(hintFile);
       if (hinted && moduleExportsName(hinted, name)) return hintFile;
     }
-    // INDEX LOOKUP: candidates already sorted; multiple files exporting the
-    // same name is legitimate (barrels, twins) — verify each against the real
-    // source and take the first that still exports the name, logging the
-    // ambiguity so it is diagnosable.
+    // INDEX LOOKUP (fallback for UNSTAMPED selections only — a stamped
+    // selection arrives with `hintFile` set to its exact `__dbSource` and
+    // returns above, never reaching here): candidates already sorted; multiple
+    // files exporting the same name is legitimate (barrels, twins) — verify
+    // each against the real source and take the first that DEFINES the name.
+    // No ambiguity warning: exact-source stamping means a same-name collision
+    // is resolved precisely client-side, so it is not a diagnosable problem.
     const indexed = lookupExportFiles(name);
-    if (indexed.length > 1) {
-      console.warn(
-        `[designbook] export index: "${name}" is exported from ${indexed.length} files (${indexed
-          .slice(0, 4)
-          .join(", ")}${indexed.length > 4 ? ", …" : ""}); picking the first that verifies.`,
-      );
-    }
     for (const repoRel of indexed.slice(0, 8)) {
       if (!containedPath(repoRoot, repoRel)) continue;
       const source = await sourceOf(repoRel);
@@ -7836,6 +7832,21 @@ function createSandboxOrchestrator(deps: SandboxDeps) {
       isChangesetPath(target.file, appDir)
     ) {
       return { error: "target.file must be a repo-relative component file." };
+    }
+    // Exact-source TRUST + verify: a client-provided `target.file` (now
+    // contained + non-sandbox) is the fiber's `__dbSource` stamp — the exact,
+    // name-collision-proof definition file. Verify it still exists AND exports
+    // the name (one read, no index/scan ladder); if it drifted (a rename
+    // between the last reload and the pin), recover the CURRENT file via the
+    // by-name resolver. This runs only for a real, in-repo file — escape /
+    // sandbox targets were already rejected above, so it can never mask them.
+    {
+      const hinted = await readFile(targetAbs, "utf8").catch(() => undefined);
+      if (!hinted || !moduleExportsName(hinted, target.exportName)) {
+        const { resolveExport } = makeExportResolver(params.repoRoot, appDir);
+        const recovered = await resolveExport(target.exportName);
+        if (recovered) target.file = recovered;
+      }
     }
     let locator: SandboxElementLocator | undefined;
     if (kind === "element") {

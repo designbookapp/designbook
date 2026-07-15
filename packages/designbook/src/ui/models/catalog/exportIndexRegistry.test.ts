@@ -59,7 +59,10 @@ describe("applyExportIndexToRegistry", () => {
     }
   });
 
-  it("dedupes ambiguous names deterministically and logs once", () => {
+  it("keeps the multi-candidate list as SILENT fallback data (no ambiguity warning)", () => {
+    // With exact-source stamping the runtime resolves each fiber to its own
+    // file, so a same-name collision is no longer ambiguous — the candidate
+    // list is kept purely as fallback and NOTHING is logged.
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     try {
       applyExportIndexToRegistry({
@@ -67,23 +70,12 @@ describe("applyExportIndexToRegistry", () => {
         "src/a.tsx": ["Button"],
       });
       const entry = registryByName.get("Button");
-      expect(entry?.sourcePath).toBe("src/a.tsx"); // sorted-first
+      expect(entry?.sourcePath).toBe("src/a.tsx"); // sorted-first (display default)
       expect(entry?.sourceCandidates).toEqual(["src/a.tsx", "src/z.tsx"]);
       const calls = warn.mock.calls.filter((call) =>
-        String(call[0]).includes('"Button" is exported from'),
+        String(call[0]).includes("is exported from"),
       );
-      expect(calls.length).toBe(1);
-      // Re-apply — logged once total.
-      applyExportIndexToRegistry({
-        "src/z.tsx": ["Button"],
-        "src/a.tsx": ["Button"],
-        "src/c.tsx": ["Other"],
-      });
-      expect(
-        warn.mock.calls.filter((call) =>
-          String(call[0]).includes('"Button" is exported from'),
-        ).length,
-      ).toBe(1);
+      expect(calls.length).toBe(0);
     } finally {
       warn.mockRestore();
     }

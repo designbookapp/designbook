@@ -89,6 +89,76 @@ function unwrapType(type: unknown): { ref: unknown; name: string } {
   return { ref: current, name };
 }
 
+/**
+ * The exact definition file stamped onto a component at transform time
+ * (sourceStamp.ts): `fiber.type.__dbSource`. The stamp lands on the DECLARED
+ * binding object, which React uses verbatim as `fiber.type` — so a direct read
+ * is correct for a plain function, and for memo/forwardRef the stamp is on the
+ * wrapper object (again `fiber.type`). The unwrapped inner function is checked
+ * too as a belt-and-suspenders. Undefined for library components (no designbook
+ * transform → no stamp; name-index resolution takes over) and prod builds.
+ */
+function sourceFromFiber(fiber: Fiber): string | undefined {
+  const type = fiber.type;
+  if (type == null || (typeof type !== "function" && typeof type !== "object")) {
+    return undefined;
+  }
+  try {
+    const direct = (type as { __dbSource?: unknown }).__dbSource;
+    if (typeof direct === "string" && direct) return direct;
+    const { ref } = unwrapType(type);
+    const inner =
+      ref && (typeof ref === "function" || typeof ref === "object")
+        ? (ref as { __dbSource?: unknown }).__dbSource
+        : undefined;
+    return typeof inner === "string" && inner ? inner : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** A registry entry with its `sourcePath` overridden by the fiber's exact
+ * stamp when present — the definitive file for pins / code panel / capture,
+ * bypassing the name→file ladder. Returns `entry` unchanged when unstamped. */
+function withStampedSource(entry: RegistryEntry, fiber: Fiber): RegistryEntry {
+  const stamped = sourceFromFiber(fiber);
+  return stamped && stamped !== entry.sourcePath
+    ? { ...entry, sourcePath: stamped }
+    : entry;
+}
+
+/**
+ * Synthesize an index-shaped entry for a STAMPED fiber that the name index
+ * hasn't registered yet (lazy index growth: a just-transformed module's stamp
+ * is on the fiber immediately, but its index entry only lands after the
+ * debounced sidecar push + UI fetch). A fiber with a stamp is an app-component
+ * boundary regardless — its exact file is already known. Undefined when the
+ * fiber carries no stamp or no component name.
+ */
+function stampSynthesizedEntry(fiber: Fiber): RegistryEntry | undefined {
+  const sourcePath = sourceFromFiber(fiber);
+  if (!sourcePath) return undefined;
+  let name: string;
+  try {
+    name = unwrapType(fiber.type).name;
+  } catch {
+    return undefined;
+  }
+  if (!name) return undefined;
+  return {
+    id: `src:${sourcePath}#${name}`,
+    name,
+    label: name,
+    sourcePath,
+    component: undefined,
+    setId: "src",
+    key: name,
+    exportName: name,
+    origin: "index",
+    sourceCandidates: [sourcePath],
+  };
+}
+
 type HitTestResult = {
   entry: RegistryEntry;
   fiber: Fiber;
@@ -144,8 +214,12 @@ function findOwnerEntry(
   while (owner && typeof owner === "object" && !seen.has(owner)) {
     seen.add(owner);
     const ownerFiber = owner as Fiber;
-    const entry = matchFiber(ownerFiber, byRef, byName);
-    if (entry) return entry;
+    // The owner's OWN stamp is the exact file its JSX lives in — prefer it over
+    // the (possibly ambiguous) name-index sourcePath, and treat a stamped-but-
+    // unindexed owner as a resolvable owner too.
+    const entry =
+      matchFiber(ownerFiber, byRef, byName) ?? stampSynthesizedEntry(ownerFiber);
+    if (entry) return withStampedSource(entry, ownerFiber);
     owner = ownerFiber._debugOwner;
   }
   return undefined;
@@ -277,35 +351,75 @@ function hitTestChain(
   const path: Fiber[] = [];
   for (let f: Fiber | null = start; f; f = f.return) path.push(f);
 
-  // Everything above the outermost registered component is scaffolding.
+  // A fiber is an app-component BOUNDARY if it matches the registry/name index
+  // (fallback) OR carries an exact `__dbSource` stamp (definitive, even before
+  // its index entry has synced). `matched` is the registry entry that drives
+  // wrapper-dedup identity; the DISPLAY entry additionally gets its file from
+  // the stamp.
+  function boundaryOf(
+    fiber: Fiber,
+  ): { matched: RegistryEntry | undefined; entry: RegistryEntry } | undefined {
+    const matched = matchFiber(fiber, byRef, byName);
+    if (matched) return { matched, entry: withStampedSource(matched, fiber) };
+    const synth = stampSynthesizedEntry(fiber);
+    return synth ? { matched: undefined, entry: synth } : undefined;
+  }
+
+  // Everything above the outermost boundary component is scaffolding.
   let outermostRegistered = -1;
   for (let i = 0; i < path.length; i++) {
-    if (matchFiber(path[i], byRef, byName)) outermostRegistered = i;
+    if (boundaryOf(path[i])) outermostRegistered = i;
   }
   if (outermostRegistered === -1) return [];
 
   const entries: FiberChainEntry[] = [];
-  let lastComponentEntry: RegistryEntry | undefined;
+  // Wrapper-dedup keys on the UNWRAPPED REF, not the registry entry: a
+  // memo/forwardRef wrapper and its inner fiber share one unwrapped ref (dedup
+  // them), while two genuinely-distinct components that happen to SHARE A NAME
+  // resolve to the same by-name entry but DIFFERENT refs — and must stay
+  // separate levels (the whole point of exact-source stamping).
+  let lastDedupeKey: unknown;
+  let lastComponentPushed: ComponentFiberEntry | undefined;
   for (let i = 0; i <= outermostRegistered; i++) {
     const fiber = path[i];
-    const matched = matchFiber(fiber, byRef, byName);
-    if (matched) {
-      if (matched === lastComponentEntry) continue; // dedupe wrapper fiber
-      lastComponentEntry = matched;
-      const { name } = unwrapType(fiber.type);
-      entries.push({
+    const boundary = boundaryOf(fiber);
+    if (boundary) {
+      const { name, ref } = unwrapType(fiber.type);
+      const dedupeKey =
+        ref && (typeof ref === "function" || typeof ref === "object")
+          ? ref
+          : boundary.entry.id;
+      if (dedupeKey === lastDedupeKey) {
+        // memo/forwardRef wrapper of the just-pushed inner: the stamp lands on
+        // the WRAPPER binding (React's `fiber.type`), not the inner fn — carry
+        // its exact file down to the kept inner entry so the pair still
+        // resolves to its own definition file.
+        const stamp = sourceFromFiber(fiber);
+        if (stamp && lastComponentPushed) {
+          lastComponentPushed.entry = {
+            ...lastComponentPushed.entry,
+            sourcePath: stamp,
+          };
+        }
+        continue;
+      }
+      lastDedupeKey = dedupeKey;
+      const pushed: ComponentFiberEntry = {
         kind: "component",
-        entry: matched,
+        entry: boundary.entry,
         fiber,
-        name: name || matched.name,
+        name: name || boundary.entry.name,
         className: asClassName(getFiberProps(fiber).className),
         ownerEntry: findOwnerEntry(fiber, byRef, byName),
-      });
+      };
+      entries.push(pushed);
+      lastComponentPushed = pushed;
       continue;
     }
 
     if (isElementNode(fiber.stateNode)) {
-      lastComponentEntry = undefined;
+      lastDedupeKey = undefined;
+      lastComponentPushed = undefined;
       const element = fiber.stateNode;
       entries.push({
         kind: "dom",
@@ -575,9 +689,12 @@ export {
   hitTestChain,
   isElementNode,
   matchFiber,
+  sourceFromFiber,
+  stampSynthesizedEntry,
   trimPageSizedTail,
   unionRects,
   unwrapType,
+  withStampedSource,
 };
 export type {
   BoundaryFiberNode,
